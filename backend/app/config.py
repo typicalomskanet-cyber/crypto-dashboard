@@ -18,10 +18,7 @@ class Settings(BaseSettings):
 
     http_timeout: float = 15.0
 
-    cors_origins: list[str] = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ]
+    cors_origins: list[str] = ["*"]
 
 
 settings = Settings()

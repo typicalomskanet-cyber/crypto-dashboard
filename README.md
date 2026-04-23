@@ -92,6 +92,57 @@ SPA откроется на `http://localhost:5173`. Vite проксирует `
 2. Включи только **Enable Reading**. Trading и Withdrawals оставь выключенными.
 3. Скопируй Key и Secret в `backend/.env`.
 
+## Android APK (Capacitor)
+
+Мобильная сборка — это та же SPA, обёрнутая в нативный WebView через
+[Capacitor](https://capacitorjs.com/). Бэкенд должен быть публично доступен
+(например, развёрнут на Fly.io / свой VPS), чтобы APK мог с ним общаться.
+
+### Сборка debug APK
+
+Требуется JDK 21 и Android SDK (cmdline-tools, `platforms;android-34`,
+`build-tools;34.0.0`). Переменные окружения:
+
+```bash
+export ANDROID_HOME=/path/to/android-sdk
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+```
+
+Сборка:
+
+```bash
+cd frontend
+# Собрать SPA с абсолютным URL API (куда APK будет стучаться):
+VITE_API_URL="https://your-backend.example.com" npm run build
+
+# Синхронизировать web-активы в нативный проект
+npx cap sync android
+
+# Собрать debug APK
+cd android
+./gradlew assembleDebug
+# APK появится здесь:
+# android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Debug APK не подписан production-ключом — на телефоне нужно включить
+«Установку из неизвестных источников» для проводника/браузера.
+
+### Release APK
+
+Нужен keystore:
+
+```bash
+keytool -genkey -v -keystore release.keystore -alias release \
+  -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Прописать ключ в `android/app/build.gradle` (блок `signingConfigs`) и собрать:
+
+```bash
+cd android && ./gradlew assembleRelease
+```
+
 ## Проверки
 
 ```bash
