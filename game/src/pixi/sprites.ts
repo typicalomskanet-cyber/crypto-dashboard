@@ -345,7 +345,9 @@ export function characterFrames(race: RaceDef, classId?: string): SpriteFrames {
 }
 
 // Enemy sprites: smaller, darker, glowing eyes.
-export function enemySprite(color: string, kind: 'goblin' | 'wolf' | 'orc' | 'shade'): HTMLCanvasElement {
+export type EnemyKind = 'goblin' | 'wolf' | 'orc' | 'shade' | 'skeleton' | 'imp' | 'lich' | 'spider';
+
+export function enemySprite(color: string, kind: EnemyKind): HTMLCanvasElement {
   const { c, g } = newCanvas();
   g.fillStyle = 'rgba(0,0,0,0.45)';
   g.beginPath();
@@ -397,6 +399,212 @@ export function enemySprite(color: string, kind: 'goblin' | 'wolf' | 'orc' | 'sh
     g.fillStyle = '#ff60a0';
     g.fillRect(cx - 4, cy - 4, 3, 4);
     g.fillRect(cx + 1, cy - 4, 3, 4);
+    return c;
+  }
+
+  if (kind === 'skeleton') {
+    const cx = W / 2;
+    const baseY = H - 6;
+    // Bone legs
+    g.fillStyle = '#dcd6c0';
+    g.fillRect(cx - 6, baseY - 24, 4, 22);
+    g.fillRect(cx + 2, baseY - 24, 4, 22);
+    // Pelvis
+    g.fillRect(cx - 8, baseY - 28, 16, 6);
+    // Ribcage
+    g.fillStyle = '#e8e2cc';
+    g.fillRect(cx - 9, baseY - 50, 18, 22);
+    g.fillStyle = '#1a1018';
+    for (let i = 0; i < 4; i++) g.fillRect(cx - 8, baseY - 48 + i * 5, 16, 2);
+    // Skull
+    g.fillStyle = '#f0e8d0';
+    g.beginPath();
+    g.arc(cx, baseY - 56, 8, 0, Math.PI * 2);
+    g.fill();
+    // Eye sockets
+    g.fillStyle = '#400000';
+    g.fillRect(cx - 4, baseY - 58, 3, 3);
+    g.fillRect(cx + 1, baseY - 58, 3, 3);
+    g.fillStyle = '#ff3050';
+    g.fillRect(cx - 3, baseY - 57, 1, 1);
+    g.fillRect(cx + 2, baseY - 57, 1, 1);
+    // Sword
+    g.fillStyle = '#c8d8ff';
+    g.fillRect(cx + 9, baseY - 56, 3, 30);
+    g.fillStyle = '#806038';
+    g.fillRect(cx + 7, baseY - 28, 7, 3);
+    strokeBlack(g);
+    g.strokeRect(cx - 9, baseY - 50, 18, 22);
+    return c;
+  }
+
+  if (kind === 'imp') {
+    const cx = W / 2;
+    const baseY = H - 8;
+    const accentImp = hexRGB(color);
+    // Glow halo
+    const grd = g.createRadialGradient(cx, baseY - 28, 4, cx, baseY - 28, 30);
+    grd.addColorStop(0, '#ff8040aa');
+    grd.addColorStop(1, 'rgba(120, 40, 0, 0)');
+    g.fillStyle = grd;
+    g.beginPath();
+    g.arc(cx, baseY - 28, 30, 0, Math.PI * 2);
+    g.fill();
+    // Body
+    g.fillStyle = shade(accentImp, 0.85);
+    g.beginPath();
+    g.ellipse(cx, baseY - 22, 11, 14, 0, 0, Math.PI * 2);
+    g.fill();
+    strokeBlack(g);
+    g.stroke();
+    // Head
+    g.fillStyle = shade(accentImp, 1.0);
+    g.beginPath();
+    g.arc(cx, baseY - 40, 8, 0, Math.PI * 2);
+    g.fill();
+    g.stroke();
+    // Horns
+    g.fillStyle = '#1a1018';
+    g.beginPath();
+    g.moveTo(cx - 6, baseY - 46);
+    g.lineTo(cx - 10, baseY - 54);
+    g.lineTo(cx - 4, baseY - 46);
+    g.closePath();
+    g.fill();
+    g.beginPath();
+    g.moveTo(cx + 6, baseY - 46);
+    g.lineTo(cx + 10, baseY - 54);
+    g.lineTo(cx + 4, baseY - 46);
+    g.closePath();
+    g.fill();
+    // Glowing eyes
+    g.fillStyle = '#ffe040';
+    g.fillRect(cx - 4, baseY - 41, 2, 2);
+    g.fillRect(cx + 2, baseY - 41, 2, 2);
+    // Wings
+    g.fillStyle = shade(accentImp, 0.4);
+    g.beginPath();
+    g.moveTo(cx - 9, baseY - 30);
+    g.quadraticCurveTo(cx - 22, baseY - 38, cx - 18, baseY - 18);
+    g.quadraticCurveTo(cx - 12, baseY - 24, cx - 9, baseY - 30);
+    g.closePath();
+    g.fill();
+    g.beginPath();
+    g.moveTo(cx + 9, baseY - 30);
+    g.quadraticCurveTo(cx + 22, baseY - 38, cx + 18, baseY - 18);
+    g.quadraticCurveTo(cx + 12, baseY - 24, cx + 9, baseY - 30);
+    g.closePath();
+    g.fill();
+    return c;
+  }
+
+  if (kind === 'lich') {
+    const cx = W / 2;
+    const baseY = H - 4;
+    // Frost halo
+    const grd = g.createRadialGradient(cx, baseY - 50, 4, cx, baseY - 50, 36);
+    grd.addColorStop(0, '#a0e0ffcc');
+    grd.addColorStop(0.6, '#1840a060');
+    grd.addColorStop(1, 'rgba(0, 16, 64, 0)');
+    g.fillStyle = grd;
+    g.beginPath();
+    g.arc(cx, baseY - 50, 36, 0, Math.PI * 2);
+    g.fill();
+    // Robe
+    g.fillStyle = '#0a0e2a';
+    g.beginPath();
+    g.moveTo(cx - 16, baseY);
+    g.lineTo(cx - 14, baseY - 50);
+    g.quadraticCurveTo(cx, baseY - 64, cx + 14, baseY - 50);
+    g.lineTo(cx + 16, baseY);
+    g.closePath();
+    g.fill();
+    strokeBlack(g);
+    g.stroke();
+    // Frost rim on robe
+    g.strokeStyle = '#a0d8ff';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(cx - 16, baseY);
+    g.lineTo(cx + 16, baseY);
+    g.stroke();
+    // Skull face
+    g.fillStyle = '#e0eaff';
+    g.beginPath();
+    g.arc(cx, baseY - 50, 8, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = '#000';
+    g.stroke();
+    // Eye sockets — icy blue
+    g.fillStyle = '#000';
+    g.fillRect(cx - 4, baseY - 52, 3, 3);
+    g.fillRect(cx + 1, baseY - 52, 3, 3);
+    g.fillStyle = '#80f0ff';
+    g.fillRect(cx - 3, baseY - 51, 1, 1);
+    g.fillRect(cx + 2, baseY - 51, 1, 1);
+    // Floating staff with crystal
+    g.fillStyle = '#3a2418';
+    g.fillRect(cx + 14, baseY - 56, 3, 50);
+    g.fillStyle = '#a0e0ff';
+    g.beginPath();
+    g.moveTo(cx + 16, baseY - 64);
+    g.lineTo(cx + 22, baseY - 56);
+    g.lineTo(cx + 16, baseY - 48);
+    g.lineTo(cx + 10, baseY - 56);
+    g.closePath();
+    g.fill();
+    g.strokeStyle = '#fff';
+    g.stroke();
+    return c;
+  }
+
+  if (kind === 'spider') {
+    const cx = W / 2;
+    const baseY = H - 6;
+    g.fillStyle = '#1a0a18';
+    // Abdomen
+    g.beginPath();
+    g.ellipse(cx, baseY - 12, 14, 10, 0, 0, Math.PI * 2);
+    g.fill();
+    strokeBlack(g);
+    g.stroke();
+    // Head
+    g.fillStyle = '#0e0410';
+    g.beginPath();
+    g.ellipse(cx, baseY - 22, 8, 6, 0, 0, Math.PI * 2);
+    g.fill();
+    g.stroke();
+    // Eyes (cluster)
+    g.fillStyle = '#a060ff';
+    g.fillRect(cx - 4, baseY - 24, 2, 2);
+    g.fillRect(cx + 2, baseY - 24, 2, 2);
+    g.fillRect(cx - 2, baseY - 22, 1, 1);
+    g.fillRect(cx + 1, baseY - 22, 1, 1);
+    // Legs (8, 4 each side)
+    g.strokeStyle = '#2a1030';
+    g.lineWidth = 2;
+    for (let i = 0; i < 4; i++) {
+      const off = -8 + i * 5;
+      g.beginPath();
+      g.moveTo(cx, baseY - 12 + off);
+      g.lineTo(cx - 18, baseY - 18 + off);
+      g.lineTo(cx - 22, baseY - 4);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(cx, baseY - 12 + off);
+      g.lineTo(cx + 18, baseY - 18 + off);
+      g.lineTo(cx + 22, baseY - 4);
+      g.stroke();
+    }
+    // Web mark on abdomen
+    g.strokeStyle = '#806080';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(cx - 6, baseY - 12);
+    g.lineTo(cx + 6, baseY - 12);
+    g.moveTo(cx, baseY - 18);
+    g.lineTo(cx, baseY - 6);
+    g.stroke();
     return c;
   }
 

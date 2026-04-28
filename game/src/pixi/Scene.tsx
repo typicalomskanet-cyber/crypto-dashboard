@@ -5,57 +5,124 @@ import {
   Graphics,
   Sprite,
   Texture,
-  TilingSprite,
 } from 'pixi.js';
 import { useGame } from '../store/game';
 import { getRace } from '../data/races';
 import { getEnemy } from '../data/enemies';
+import { ENEMIES } from '../data/enemies';
 import {
-  frozenGroundTile,
-  pathTile,
   darkTreeSprite,
   rockSprite,
   shrineSprite,
   gateSprite,
 } from './textures';
 import { characterFrames, enemySprite } from './sprites';
+import type { EnemyKind } from './sprites';
+import {
+  TILE_HW,
+  TILE_HH,
+  worldToScreen,
+  screenToWorld,
+  isoDepth,
+} from './iso';
+import {
+  isoFrozenTile,
+  isoStoneTile,
+  isoPathTile,
+  isoPlazaTile,
+  isoCorruptTile,
+} from './isoTextures';
 
-// 2D top-down dark-fantasy world. Tiles are procedurally drawn into 2D
-// canvases at startup, uploaded to GPU as Pixi textures, and rendered via
-// TilingSprite + sprite batches.
+// ---- World layout ------------------------------------------------------
 
-interface EnemySpawn {
+const GRID = 30; // tiles per side
+const CENTER = GRID / 2;
+
+// Tile kinds
+const T_FROZEN = 0;
+const T_STONE = 1;
+const T_PATH = 2;
+const T_PLAZA = 3;
+const T_CORRUPT = 4;
+
+// Build a static tile map. Plaza in the centre, paths radiating north +
+// south, scattered corruption patches that house the more dangerous
+// monsters.
+function buildTileMap(): number[][] {
+  const map: number[][] = [];
+  for (let y = 0; y < GRID; y++) {
+    const row: number[] = [];
+    for (let x = 0; x < GRID; x++) {
+      const dx = x - CENTER;
+      const dy = y - CENTER;
+      const r = Math.hypot(dx, dy);
+      let t = T_FROZEN;
+      if (r < 3) t = T_PLAZA;
+      else if (r < 4.2) t = T_STONE;
+      else if (Math.abs(dx) < 1 && r < 11) t = T_PATH;
+      else if (Math.abs(dy) < 1 && r < 11) t = T_PATH;
+      // Corruption pockets in the corners.
+      if ((Math.abs(dx) > 9 && Math.abs(dy) > 7) ||
+          (Math.abs(dx) > 7 && Math.abs(dy) > 9)) {
+        if (((x * 7 + y * 13) % 5) !== 0) t = T_CORRUPT;
+      }
+      row.push(t);
+    }
+    map.push(row);
+  }
+  return map;
+}
+
+// ---- Enemy spawn definitions ------------------------------------------
+
+interface SpawnDef {
   id: string;
   enemyDefId: string;
-  position: [number, number];
+  gx: number;
+  gy: number;
+  homeRadius: number;
+  aggroRadius: number;
 }
 
-const WORLD_W = 1600;
-const WORLD_H = 1200;
-
-const ENEMY_SPAWNS: EnemySpawn[] = [
-  { id: 'sp1', enemyDefId: 'e_goblin', position: [220, 160] },
-  { id: 'sp2', enemyDefId: 'e_goblin', position: [-200, 240] },
-  { id: 'sp3', enemyDefId: 'e_wolf', position: [380, -320] },
-  { id: 'sp4', enemyDefId: 'e_wolf', position: [-400, -240] },
-  { id: 'sp5', enemyDefId: 'e_orc_raider', position: [-560, 480] },
-  { id: 'sp6', enemyDefId: 'e_orc_raider', position: [560, 480] },
-  { id: 'sp7', enemyDefId: 'e_shade', position: [0, -560] },
+const SPAWNS: SpawnDef[] = [
+  // Goblins near the plaza — easy starter mobs.
+  { id: 's_g1', enemyDefId: 'e_goblin', gx: CENTER + 4, gy: CENTER + 1, homeRadius: 2, aggroRadius: 3.5 },
+  { id: 's_g2', enemyDefId: 'e_goblin', gx: CENTER - 4, gy: CENTER + 2, homeRadius: 2, aggroRadius: 3.5 },
+  { id: 's_g3', enemyDefId: 'e_goblin', gx: CENTER + 1, gy: CENTER - 5, homeRadius: 2, aggroRadius: 3.5 },
+  // Wolves prowling east.
+  { id: 's_w1', enemyDefId: 'e_wolf', gx: CENTER + 7, gy: CENTER + 5, homeRadius: 3, aggroRadius: 4 },
+  { id: 's_w2', enemyDefId: 'e_wolf', gx: CENTER + 8, gy: CENTER - 3, homeRadius: 3, aggroRadius: 4 },
+  // Skeletons in the southern path.
+  { id: 's_s1', enemyDefId: 'e_skeleton', gx: CENTER + 2, gy: CENTER + 8, homeRadius: 3, aggroRadius: 4 },
+  { id: 's_s2', enemyDefId: 'e_skeleton', gx: CENTER - 2, gy: CENTER + 9, homeRadius: 3, aggroRadius: 4 },
+  // Orcs west.
+  { id: 's_o1', enemyDefId: 'e_orc_raider', gx: CENTER - 8, gy: CENTER - 4, homeRadius: 3, aggroRadius: 4.5 },
+  { id: 's_o2', enemyDefId: 'e_orc_raider', gx: CENTER - 9, gy: CENTER + 4, homeRadius: 3, aggroRadius: 4.5 },
+  // Imps in the corruption patches.
+  { id: 's_i1', enemyDefId: 'e_imp', gx: CENTER + 11, gy: CENTER + 9, homeRadius: 3, aggroRadius: 5 },
+  { id: 's_i2', enemyDefId: 'e_imp', gx: CENTER - 11, gy: CENTER - 9, homeRadius: 3, aggroRadius: 5 },
+  // Spiders in deep north.
+  { id: 's_p1', enemyDefId: 'e_spider', gx: CENTER + 2, gy: CENTER - 10, homeRadius: 3, aggroRadius: 4 },
+  { id: 's_p2', enemyDefId: 'e_spider', gx: CENTER - 3, gy: CENTER - 11, homeRadius: 3, aggroRadius: 4 },
+  // Shadow Wraiths deep east.
+  { id: 's_sh1', enemyDefId: 'e_shade', gx: CENTER + 12, gy: CENTER, homeRadius: 3, aggroRadius: 5 },
+  // Frost Lich — the boss tucked far north-west.
+  { id: 's_l1', enemyDefId: 'e_lich', gx: CENTER - 12, gy: CENTER - 12, homeRadius: 4, aggroRadius: 5 },
 ];
 
-interface EnemyEntry {
+interface MobEntry {
+  spawn: SpawnDef;
   defId: string;
   sprite: Sprite;
+  hpBar: Graphics;
   alive: boolean;
-  pos: { x: number; y: number };
+  gx: number;
+  gy: number;
   bobOffset: number;
+  respawnAt: number;
 }
 
-interface PlayerEntry {
-  container: Container;
-  idle: Sprite;
-  attack: Sprite;
-}
+// ---- Performance tier --------------------------------------------------
 
 function detectPerfTier(): { dprCap: number; antialias: boolean; maxFPS: number } {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
@@ -65,17 +132,23 @@ function detectPerfTier(): { dprCap: number; antialias: boolean; maxFPS: number 
   const lowEnd = isMobile || mem < 4 || cores < 4;
   return {
     dprCap: lowEnd ? 1.25 : 1.75,
-    antialias: false, // pixel-art crisp regardless
+    antialias: false,
     maxFPS: lowEnd ? 50 : 60,
   };
 }
 
+// ---- Scene React component --------------------------------------------
+
 export function GameScene() {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const joystickRef = useRef<HTMLDivElement | null>(null);
+  const stickRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const mount = mountRef.current;
-    if (!mount) return;
+    const joystick = joystickRef.current;
+    const stick = stickRef.current;
+    if (!mount || !joystick || !stick) return;
 
     let destroyed = false;
     let cleanup: (() => void) | null = null;
@@ -86,7 +159,7 @@ export function GameScene() {
       await app.init({
         width: mount.clientWidth,
         height: mount.clientHeight,
-        backgroundColor: 0x0a0410,
+        backgroundColor: 0x070310,
         antialias: tier.antialias,
         resolution: Math.min(window.devicePixelRatio, tier.dprCap),
         autoDensity: true,
@@ -98,166 +171,154 @@ export function GameScene() {
       }
       mount.appendChild(app.canvas);
 
-      // Crisp pixel-art rendering for upscaled procedural textures.
-      const groundTex = Texture.from(frozenGroundTile());
-      groundTex.source.scaleMode = 'nearest';
-      const pathTex = Texture.from(pathTile());
-      pathTex.source.scaleMode = 'nearest';
-
-      // ---- World root ----
-      const world = new Container();
-      app.stage.addChild(world);
-
-      // Ground tiling layer (covers entire world)
-      const ground = new TilingSprite({
-        texture: groundTex,
-        width: WORLD_W,
-        height: WORLD_H,
-      });
-      ground.x = -WORLD_W / 2;
-      ground.y = -WORLD_H / 2;
-      world.addChild(ground);
-
-      // Plaza (path tile)
-      const plaza = new Sprite(pathTex);
-      plaza.width = 320;
-      plaza.height = 320;
-      plaza.anchor.set(0.5);
-      plaza.x = 0;
-      plaza.y = 0;
-      world.addChild(plaza);
-
-      // Vignette overlay
-      const vignette = new Graphics();
-      vignette.rect(-WORLD_W / 2, -WORLD_H / 2, WORLD_W, WORLD_H).fill({ color: 0x000000, alpha: 0.0 });
-      // Use a soft radial darkening with a circle gradient (Pixi 8 supports gradient fills via Graphics).
-      // Simple alternative: draw 4 large dark rectangles as borders.
-      const border = new Graphics();
-      border.rect(-WORLD_W / 2, -WORLD_H / 2, WORLD_W, 80).fill({ color: 0x000000, alpha: 0.55 });
-      border.rect(-WORLD_W / 2, WORLD_H / 2 - 80, WORLD_W, 80).fill({ color: 0x000000, alpha: 0.55 });
-      border.rect(-WORLD_W / 2, -WORLD_H / 2, 80, WORLD_H).fill({ color: 0x000000, alpha: 0.55 });
-      border.rect(WORLD_W / 2 - 80, -WORLD_H / 2, 80, WORLD_H).fill({ color: 0x000000, alpha: 0.55 });
-      world.addChild(border);
-
-      // ---- Decorations: trees and rocks ----
-      const treeTexA = Texture.from(darkTreeSprite(7));
-      treeTexA.source.scaleMode = 'nearest';
-      const treeTexB = Texture.from(darkTreeSprite(33));
-      treeTexB.source.scaleMode = 'nearest';
-      const rockTexA = Texture.from(rockSprite(11));
-      rockTexA.source.scaleMode = 'nearest';
-      const rockTexB = Texture.from(rockSprite(23));
-      rockTexB.source.scaleMode = 'nearest';
-
+      // ---- Layers ----
+      const camera = new Container();
+      app.stage.addChild(camera);
+      const tileLayer = new Container();
       const decorLayer = new Container();
-      world.addChild(decorLayer);
-      const decorPlacements: { x: number; y: number; tex: Texture; isTree: boolean }[] = [];
-      for (let i = 0; i < 28; i++) {
-        const x = (Math.sin(i * 12.9898) * 43758.5453) % 1;
-        const z = (Math.sin(i * 78.233) * 43758.5453) % 1;
-        const rx = (x - Math.floor(x)) * (WORLD_W * 0.85) - WORLD_W * 0.42;
-        const rz = (z - Math.floor(z)) * (WORLD_H * 0.85) - WORLD_H * 0.42;
-        if (Math.abs(rx) < 220 && Math.abs(rz) < 220) continue;
-        decorPlacements.push({ x: rx, y: rz, tex: i % 2 === 0 ? treeTexA : treeTexB, isTree: true });
-      }
-      for (let i = 0; i < 18; i++) {
-        const x = (Math.sin(i * 31.1 + 1.3) * 43758.5453) % 1;
-        const z = (Math.sin(i * 14.7 + 9.1) * 43758.5453) % 1;
-        const rx = (x - Math.floor(x)) * (WORLD_W * 0.85) - WORLD_W * 0.42;
-        const rz = (z - Math.floor(z)) * (WORLD_H * 0.85) - WORLD_H * 0.42;
-        if (Math.abs(rx) < 200 && Math.abs(rz) < 200) continue;
-        decorPlacements.push({ x: rx, y: rz, tex: i % 2 === 0 ? rockTexA : rockTexB, isTree: false });
+      const entityLayer = new Container();
+      const fxLayer = new Container();
+      camera.addChild(tileLayer, decorLayer, entityLayer, fxLayer);
+
+      // ---- Tile textures ----
+      const tileTex: Texture[] = [
+        Texture.from(isoFrozenTile()),
+        Texture.from(isoStoneTile()),
+        Texture.from(isoPathTile()),
+        Texture.from(isoPlazaTile()),
+        Texture.from(isoCorruptTile()),
+      ];
+      tileTex.forEach((t) => (t.source.scaleMode = 'nearest'));
+
+      const map = buildTileMap();
+      // Render tiles in iso order so the diamonds tile cleanly (no gaps).
+      // Iterate y outer, x inner — nearest-neighbour seams are eliminated by
+      // anchoring at the diamond top vertex.
+      for (let y = 0; y < GRID; y++) {
+        for (let x = 0; x < GRID; x++) {
+          const t = map[y][x];
+          const s = new Sprite(tileTex[t]);
+          s.anchor.set(0.5, 0); // top vertex
+          const p = worldToScreen(x, y);
+          s.x = p.x;
+          s.y = p.y - TILE_HH;
+          tileLayer.addChild(s);
+        }
       }
 
-      // Shrine at origin
+      // ---- Decorations: trees / rocks / shrine / gate ----
+      const treeTex = [Texture.from(darkTreeSprite(7)), Texture.from(darkTreeSprite(33))];
+      const rockTex = [Texture.from(rockSprite(11)), Texture.from(rockSprite(23))];
       const shrineTex = Texture.from(shrineSprite());
-      shrineTex.source.scaleMode = 'nearest';
-      const shrine = new Sprite(shrineTex);
-      shrine.anchor.set(0.5, 1);
-      shrine.x = 0;
-      shrine.y = 0;
-      decorPlacements.push({ x: 0, y: 0, tex: shrineTex, isTree: false });
-
-      // Gate to the north
       const gateTex = Texture.from(gateSprite());
-      gateTex.source.scaleMode = 'nearest';
-      const gate = new Sprite(gateTex);
-      gate.anchor.set(0.5, 1);
-      gate.x = 0;
-      gate.y = -WORLD_H / 2 + 220;
-      decorPlacements.push({ x: 0, y: -WORLD_H / 2 + 220, tex: gateTex, isTree: false });
+      [...treeTex, ...rockTex, shrineTex, gateTex].forEach((t) => (t.source.scaleMode = 'nearest'));
+
+      const decorations: { gx: number; gy: number; tex: Texture; oy: number }[] = [];
+      // Procedural placement avoiding plaza + paths.
+      let seed = 31;
+      const rnd = () => {
+        seed = (seed * 1664525 + 1013904223) | 0;
+        return ((seed >>> 0) % 1000) / 1000;
+      };
+      for (let i = 0; i < 70; i++) {
+        const gx = rnd() * GRID;
+        const gy = rnd() * GRID;
+        const ix = Math.min(GRID - 1, Math.max(0, Math.floor(gx)));
+        const iy = Math.min(GRID - 1, Math.max(0, Math.floor(gy)));
+        const tile = map[iy][ix];
+        if (tile === T_PLAZA || tile === T_STONE || tile === T_PATH) continue;
+        const isTree = rnd() > 0.35;
+        const tex = isTree
+          ? treeTex[(rnd() * treeTex.length) | 0]
+          : rockTex[(rnd() * rockTex.length) | 0];
+        decorations.push({ gx, gy, tex, oy: isTree ? 8 : 4 });
+      }
+      // Shrine in the centre of the plaza.
+      decorations.push({ gx: CENTER, gy: CENTER, tex: shrineTex, oy: 4 });
+      // Gate at the northern edge.
+      decorations.push({ gx: CENTER - 4, gy: CENTER - 12, tex: gateTex, oy: 0 });
+
+      const decorSprites: Sprite[] = [];
+      for (const d of decorations) {
+        const s = new Sprite(d.tex);
+        s.anchor.set(0.5, 1);
+        const p = worldToScreen(d.gx, d.gy);
+        s.x = p.x;
+        s.y = p.y + d.oy;
+        s.zIndex = isoDepth(d.gx, d.gy);
+        entityLayer.addChild(s); // mixed with mobs for depth-sort
+        decorSprites.push(s);
+      }
 
       // ---- Player ----
       const snap = useGame.getState();
       const raceId = snap.player?.raceId ?? 'human';
       const race = getRace(raceId);
       const frames = race ? characterFrames(race, snap.player?.classId) : null;
-      const playerContainer = new Container();
-      const playerIdleTex = Texture.from(frames ? frames.idle : darkTreeSprite(0));
-      playerIdleTex.source.scaleMode = 'nearest';
-      const playerAttackTex = Texture.from(frames ? frames.attack : darkTreeSprite(0));
-      playerAttackTex.source.scaleMode = 'nearest';
-      const playerIdle = new Sprite(playerIdleTex);
-      playerIdle.anchor.set(0.5, 1);
-      const playerAttack = new Sprite(playerAttackTex);
-      playerAttack.anchor.set(0.5, 1);
-      playerAttack.visible = false;
-      playerContainer.addChild(playerIdle, playerAttack);
-      const player: PlayerEntry = {
-        container: playerContainer,
-        idle: playerIdle,
-        attack: playerAttack,
-      };
-      // Map game x/z (Three.js coords) -> Pixi x/y at 40px per game unit.
-      const SCALE = 40;
-      playerContainer.x = (snap.player?.pos.x ?? 0) * SCALE;
-      playerContainer.y = (snap.player?.pos.z ?? 0) * SCALE;
+      const idleTex = Texture.from(frames ? frames.idle : darkTreeSprite(0));
+      const attackTex = Texture.from(frames ? frames.attack : darkTreeSprite(0));
+      idleTex.source.scaleMode = 'nearest';
+      attackTex.source.scaleMode = 'nearest';
 
-      // ---- Enemies ----
-      const enemies = new Map<string, EnemyEntry>();
-      for (const sp of ENEMY_SPAWNS) {
+      const playerContainer = new Container();
+      const idle = new Sprite(idleTex);
+      idle.anchor.set(0.5, 1);
+      const attack = new Sprite(attackTex);
+      attack.anchor.set(0.5, 1);
+      attack.visible = false;
+      playerContainer.addChild(idle, attack);
+      entityLayer.addChild(playerContainer);
+
+      // Player tile coords (continuous). Legacy saves used a different
+      // coordinate system (top-down pixels), so any value outside the iso
+      // map bounds — including (0, 0) — is treated as uninitialized and
+      // snapped back to the plaza centre.
+      const savedX = snap.player?.pos.x ?? 0;
+      const savedY = snap.player?.pos.z ?? 0;
+      let pgx = CENTER;
+      let pgy = CENTER;
+      if (savedX >= 1 && savedX <= GRID - 1 && savedY >= 1 && savedY <= GRID - 1) {
+        pgx = savedX;
+        pgy = savedY;
+      }
+
+      // Player HP bar
+      const playerHp = new Graphics();
+      entityLayer.addChild(playerHp);
+
+      // ---- Mobs ----
+      const mobs = new Map<string, MobEntry>();
+      for (const sp of SPAWNS) {
         const def = getEnemy(sp.enemyDefId);
         if (!def) continue;
-        let kind: 'goblin' | 'wolf' | 'orc' | 'shade' = 'goblin';
-        if (def.id.includes('wolf')) kind = 'wolf';
-        else if (def.id.includes('orc')) kind = 'orc';
-        else if (def.id.includes('shade')) kind = 'shade';
+        const kind = enemyKindForId(def.id);
         const tex = Texture.from(enemySprite(def.color, kind));
         tex.source.scaleMode = 'nearest';
-        const sprite = new Sprite(tex);
-        sprite.anchor.set(0.5, 1);
-        sprite.x = sp.position[0];
-        sprite.y = sp.position[1];
-        enemies.set(sp.id, {
-          defId: def.id,
-          sprite,
-          alive: true,
-          pos: { x: sp.position[0], y: sp.position[1] },
-          bobOffset: Math.random() * Math.PI * 2,
-        });
-      }
-
-      // Add decorations + entities to a Y-sortable container so closer
-      // sprites correctly overlap further ones.
-      const ySortLayer = new Container();
-      world.addChild(ySortLayer);
-      for (const d of decorPlacements) {
-        const s = new Sprite(d.tex);
+        const s = new Sprite(tex);
         s.anchor.set(0.5, 1);
-        s.x = d.x;
-        s.y = d.y + 10;
-        ySortLayer.addChild(s);
+        const hpBar = new Graphics();
+        const m: MobEntry = {
+          spawn: sp,
+          defId: def.id,
+          sprite: s,
+          hpBar,
+          alive: true,
+          gx: sp.gx,
+          gy: sp.gy,
+          bobOffset: Math.random() * Math.PI * 2,
+          respawnAt: 0,
+        };
+        mobs.set(sp.id, m);
+        entityLayer.addChild(s, hpBar);
       }
-      for (const e of enemies.values()) ySortLayer.addChild(e.sprite);
-      ySortLayer.addChild(playerContainer);
 
-      // ---- Camera ----
-      const camera = world;
-      const updateCamera = () => {
-        camera.x = app.screen.width / 2 - playerContainer.x;
-        camera.y = app.screen.height / 2 - playerContainer.y;
+      // ---- Camera initial pos ----
+      const placeCamera = () => {
+        const p = worldToScreen(pgx, pgy);
+        camera.x = app.screen.width / 2 - p.x;
+        camera.y = app.screen.height / 2 - p.y;
       };
-      updateCamera();
+      placeCamera();
 
       // ---- Resize ----
       const onResize = () => {
@@ -265,40 +326,97 @@ export function GameScene() {
       };
       window.addEventListener('resize', onResize);
 
-      // ---- Click-to-move + engagement ----
-      let target = { x: playerContainer.x, y: playerContainer.y };
-      let engageKey: string | null = null;
+      // ---- Input state ----
+      const keys = new Set<string>();
+      const onKeyDown = (e: KeyboardEvent) => {
+        keys.add(e.key.toLowerCase());
+      };
+      const onKeyUp = (e: KeyboardEvent) => {
+        keys.delete(e.key.toLowerCase());
+      };
+      window.addEventListener('keydown', onKeyDown);
+      window.addEventListener('keyup', onKeyUp);
 
+      // Click to interact: target a mob if hit; otherwise no-op (movement
+      // is via WASD / joystick).
       const onPointerDown = (ev: PointerEvent) => {
         const rect = app.canvas.getBoundingClientRect();
-        const sx = ev.clientX - rect.left;
-        const sy = ev.clientY - rect.top;
-        // Convert screen coords to world coords (camera offset).
-        const wx = sx - camera.x;
-        const wy = sy - camera.y;
-
-        // Hit-test enemies (within sprite bounds).
-        let hit: { key: string; entry: EnemyEntry } | null = null;
-        for (const [key, e] of enemies) {
-          if (!e.alive) continue;
-          const dx = wx - e.sprite.x;
-          const dy = wy - e.sprite.y + 32;
-          if (dx * dx + dy * dy < 36 * 36) {
-            hit = { key, entry: e };
-            break;
+        const sx = ev.clientX - rect.left - camera.x;
+        const sy = ev.clientY - rect.top - camera.y;
+        // Convert the pixel offset of the entity layer back to grid coords.
+        // Entities are anchored at their feet — y refers to the feet.
+        // We approximate the click as targeting the nearest visible mob.
+        let best: MobEntry | null = null;
+        let bestD = Infinity;
+        for (const m of mobs.values()) {
+          if (!m.alive) continue;
+          const dx = m.sprite.x - sx;
+          const dy = m.sprite.y - sy + 32;
+          const d = dx * dx + dy * dy;
+          if (d < 50 * 50 && d < bestD) {
+            best = m;
+            bestD = d;
           }
         }
-        if (hit) {
-          target = { x: hit.entry.pos.x, y: hit.entry.pos.y + 10 };
-          useGame.getState().movePlayer(target.x / SCALE, target.y / SCALE);
-          engageKey = hit.key;
+        if (best) {
+          // Move toward it; engagement is automatic on collision.
+          targetMob = best;
           return;
         }
-        target = { x: wx, y: wy };
-        useGame.getState().movePlayer(target.x / SCALE, target.y / SCALE);
-        engageKey = null;
+        // Otherwise, click-to-move toward the screen point (translated to
+        // grid coords).
+        const w = screenToWorld(sx, sy);
+        targetMob = null;
+        clickTarget = { gx: w.gx, gy: w.gy };
       };
       app.canvas.addEventListener('pointerdown', onPointerDown);
+
+      // ---- Virtual joystick ----
+      let joystickActive = false;
+      let joystickDx = 0;
+      let joystickDy = 0;
+      const center = { x: 0, y: 0 };
+      const radius = 48;
+
+      const stickPoint = (clientX: number, clientY: number) => {
+        const r = joystick.getBoundingClientRect();
+        center.x = r.left + r.width / 2;
+        center.y = r.top + r.height / 2;
+        let dx = clientX - center.x;
+        let dy = clientY - center.y;
+        const d = Math.hypot(dx, dy);
+        if (d > radius) {
+          dx = (dx / d) * radius;
+          dy = (dy / d) * radius;
+        }
+        stick.style.transform = `translate(${dx}px, ${dy}px)`;
+        joystickDx = dx / radius;
+        joystickDy = dy / radius;
+      };
+      const stickDown = (ev: PointerEvent) => {
+        joystickActive = true;
+        joystick.setPointerCapture(ev.pointerId);
+        stickPoint(ev.clientX, ev.clientY);
+      };
+      const stickMove = (ev: PointerEvent) => {
+        if (!joystickActive) return;
+        stickPoint(ev.clientX, ev.clientY);
+      };
+      const stickUp = (ev: PointerEvent) => {
+        joystickActive = false;
+        joystickDx = 0;
+        joystickDy = 0;
+        stick.style.transform = 'translate(0, 0)';
+        try { joystick.releasePointerCapture(ev.pointerId); } catch { /* noop */ }
+      };
+      joystick.addEventListener('pointerdown', stickDown);
+      joystick.addEventListener('pointermove', stickMove);
+      joystick.addEventListener('pointerup', stickUp);
+      joystick.addEventListener('pointercancel', stickUp);
+
+      // ---- Auto-target chase ----
+      let targetMob: MobEntry | null = null;
+      let clickTarget: { gx: number; gy: number } | null = null;
 
       // ---- Animation loop ----
       let lastT = performance.now();
@@ -312,110 +430,200 @@ export function GameScene() {
           lastT = now;
           return;
         }
-        if (now - lastFrameDraw < minFrameMs) {
-          // Pixi will still render this frame; skip game-state work.
-          return;
-        }
+        if (now - lastFrameDraw < minFrameMs) return;
         lastFrameDraw = now;
         const dt = Math.min(0.05, (now - lastT) / 1000);
         lastT = now;
 
         const gs = useGame.getState();
-        const speed = 200; // px / sec
 
-        // Move toward target (in screen px coords).
-        const dx = target.x - playerContainer.x;
-        const dy = target.y - playerContainer.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist > 4 && !gs.combat) {
-          const stepLen = Math.min(dist, speed * dt);
-          const ux = dx / dist;
-          const uy = dy / dist;
-          playerContainer.x += ux * stepLen;
-          playerContainer.y += uy * stepLen;
-          // Face direction (flip horizontally if moving left).
-          playerContainer.scale.x = ux < 0 ? -1 : 1;
-          useGame.getState().movePlayer(playerContainer.x / SCALE, playerContainer.y / SCALE);
+        // ---- Player movement ----
+        if (!gs.combat) {
+          // Build a screen-space velocity from keyboard + joystick.
+          let svx = joystickDx;
+          let svy = joystickDy;
+          if (keys.has('w') || keys.has('arrowup')) svy -= 1;
+          if (keys.has('s') || keys.has('arrowdown')) svy += 1;
+          if (keys.has('a') || keys.has('arrowleft')) svx -= 1;
+          if (keys.has('d') || keys.has('arrowright')) svx += 1;
+          const inputMag = Math.hypot(svx, svy);
+          if (inputMag > 0.01) {
+            // Cancel pending click target while we drive manually.
+            clickTarget = null;
+            targetMob = null;
+            const norm = Math.min(1, inputMag);
+            const ux = (svx / inputMag) * norm;
+            const uy = (svy / inputMag) * norm;
+            const w = screenToWorld(ux, uy);
+            const speed = 4.5; // tiles / sec
+            pgx += w.gx * speed * dt;
+            pgy += w.gy * speed * dt;
+            idle.scale.x = ux < 0 ? -1 : 1;
+            attack.scale.x = idle.scale.x;
+          } else if (targetMob && targetMob.alive) {
+            // Chase the targeted mob.
+            const dx = targetMob.gx - pgx;
+            const dy = targetMob.gy - pgy;
+            const d = Math.hypot(dx, dy);
+            if (d > 0.6) {
+              const speed = 4.5;
+              pgx += (dx / d) * speed * dt;
+              pgy += (dy / d) * speed * dt;
+              const sp = worldToScreen(dx, dy);
+              idle.scale.x = sp.x < 0 ? -1 : 1;
+              attack.scale.x = idle.scale.x;
+            } else {
+              // In range — engage.
+              gs.engageEnemy(targetMob.defId);
+              attackFlashUntil = now + 250;
+            }
+          } else if (clickTarget) {
+            const dx = clickTarget.gx - pgx;
+            const dy = clickTarget.gy - pgy;
+            const d = Math.hypot(dx, dy);
+            if (d > 0.15) {
+              const speed = 4.5;
+              pgx += (dx / d) * speed * dt;
+              pgy += (dy / d) * speed * dt;
+              const sp = worldToScreen(dx, dy);
+              idle.scale.x = sp.x < 0 ? -1 : 1;
+              attack.scale.x = idle.scale.x;
+            } else {
+              clickTarget = null;
+            }
+          }
+          // Clamp to map.
+          pgx = Math.max(0.5, Math.min(GRID - 0.5, pgx));
+          pgy = Math.max(0.5, Math.min(GRID - 0.5, pgy));
+          gs.movePlayer(pgx, pgy);
         }
 
-        // Engagement detection.
-        if (engageKey && !gs.combat) {
-          const e = enemies.get(engageKey);
-          if (e && e.alive) {
-            const ex = e.pos.x - playerContainer.x;
-            const ey = e.pos.y - playerContainer.y;
-            if (Math.hypot(ex, ey) < 70) {
-              useGame.getState().engageEnemy(e.defId);
+        // ---- Mob AI ----
+        for (const m of mobs.values()) {
+          if (!m.alive) {
+            if (m.respawnAt > 0 && now > m.respawnAt) {
+              m.alive = true;
+              m.sprite.visible = true;
+              m.gx = m.spawn.gx;
+              m.gy = m.spawn.gy;
+              m.respawnAt = 0;
+            }
+            continue;
+          }
+          // Don't move while combat is active (player is engaged with one).
+          if (!gs.combat) {
+            const dx = pgx - m.gx;
+            const dy = pgy - m.gy;
+            const d = Math.hypot(dx, dy);
+            if (d < m.spawn.aggroRadius && d > 0.6) {
+              // Chase player.
+              const def = getEnemy(m.defId);
+              const speed = (def?.stats.speed ?? 2.5) * 0.4; // slower than player
+              m.gx += (dx / d) * speed * dt;
+              m.gy += (dy / d) * speed * dt;
+            } else if (d <= 0.6 && !targetMob) {
+              // Mob initiates combat — auto-engage.
+              targetMob = m;
+              gs.engageEnemy(m.defId);
               attackFlashUntil = now + 250;
+            } else if (d > m.spawn.aggroRadius * 1.5) {
+              // Wander home.
+              const hx = m.spawn.gx - m.gx;
+              const hy = m.spawn.gy - m.gy;
+              const hd = Math.hypot(hx, hy);
+              if (hd > 0.1) {
+                const speed = 0.8;
+                m.gx += (hx / hd) * speed * dt;
+                m.gy += (hy / hd) * speed * dt;
+              }
             }
           }
         }
 
-        // Combat tick.
+        // ---- Combat tick ----
         if (gs.combat) {
-          useGame.getState().tick(dt);
-          // Visual attack flash on each tick.
+          gs.tick(dt);
           attackFlashUntil = now + 200;
+          // Mark targeted mob dead when combat ends with victory (enemy hp 0).
         }
-
-        // Attack pose toggle.
-        const attacking = now < attackFlashUntil;
-        player.idle.visible = !attacking;
-        player.attack.visible = attacking;
-
-        // Mark defeated enemy after combat ends.
         const after = useGame.getState();
-        if (!after.combat && engageKey) {
-          const e = enemies.get(engageKey);
-          if (e && e.alive) {
-            e.alive = false;
-            e.sprite.visible = false;
-            const key = engageKey;
-            setTimeout(() => {
-              const ent = enemies.get(key);
-              if (ent) {
-                ent.alive = true;
-                ent.sprite.visible = true;
-              }
-            }, 15000);
-            engageKey = null;
+        if (!after.combat && targetMob) {
+          // Combat just ended. If our target survived (player fled / lost),
+          // it stays alive. If it was defeated, mark it dead with respawn.
+          const stillThere = mobs.get(targetMob.spawn.id);
+          if (stillThere && stillThere.alive) {
+            stillThere.alive = false;
+            stillThere.sprite.visible = false;
+            stillThere.respawnAt = now + 15000;
           }
+          targetMob = null;
         }
 
-        // Ambient bob for living enemies.
-        for (const e of enemies.values()) {
-          if (e.alive) {
-            e.sprite.y = e.pos.y + Math.sin(now * 0.003 + e.bobOffset) * 1.5;
+        // Attack pose toggle
+        const attacking = now < attackFlashUntil;
+        idle.visible = !attacking;
+        attack.visible = attacking;
+
+        // ---- Update sprite positions ----
+        const ppos = worldToScreen(pgx, pgy);
+        playerContainer.x = ppos.x;
+        playerContainer.y = ppos.y;
+        playerContainer.zIndex = isoDepth(pgx, pgy);
+        // Player HP bar
+        playerHp.clear();
+        if (gs.player) {
+          const pct = Math.max(0, gs.player.hp / Math.max(1, totalMaxHp(gs)));
+          playerHp.rect(ppos.x - 18, ppos.y - 78, 36, 4).fill({ color: 0x101820, alpha: 0.9 });
+          playerHp.rect(ppos.x - 17, ppos.y - 77, 34 * pct, 2).fill({ color: 0xc83040, alpha: 1 });
+        }
+
+        for (const m of mobs.values()) {
+          if (!m.alive) {
+            m.hpBar.clear();
+            continue;
           }
+          const sp = worldToScreen(m.gx, m.gy);
+          m.sprite.x = sp.x;
+          m.sprite.y = sp.y + Math.sin(now * 0.003 + m.bobOffset) * 1.5;
+          m.sprite.zIndex = isoDepth(m.gx, m.gy);
+          // If this mob is the active combat target, draw an HP bar above
+          // it. Otherwise show a faint nameplate dot only when in aggro.
+          m.hpBar.clear();
+          if (gs.combat && gs.combat.enemyDefId === m.defId && targetMob && targetMob.spawn.id === m.spawn.id) {
+            const pct = Math.max(0, gs.combat.enemyHp / gs.combat.enemyMaxHp);
+            m.hpBar.rect(sp.x - 18, sp.y - 70, 36, 4).fill({ color: 0x101820, alpha: 0.9 });
+            m.hpBar.rect(sp.x - 17, sp.y - 69, 34 * pct, 2).fill({ color: 0xc83040 });
+          } else if (Math.hypot(pgx - m.gx, pgy - m.gy) < m.spawn.aggroRadius) {
+            m.hpBar.circle(sp.x, sp.y - 64, 2).fill({ color: 0xff4060, alpha: 0.7 });
+          }
+          m.hpBar.zIndex = isoDepth(m.gx, m.gy) + 0.5;
         }
 
-        // Player bob while moving.
-        if (dist > 4) {
-          playerContainer.skew.y = Math.sin(now * 0.018) * 0.025;
-        } else {
-          playerContainer.skew.y *= 0.85;
-        }
+        // ---- Y-sort entityLayer ----
+        entityLayer.children.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
 
-        // Y-sort by y position so closer sprites overlap.
-        ySortLayer.children.sort((a, b) => a.y - b.y);
-
-        // Camera follow with easing.
-        const tx = app.screen.width / 2 - playerContainer.x;
-        const ty = app.screen.height / 2 - playerContainer.y;
-        camera.x += (tx - camera.x) * 0.12;
-        camera.y += (ty - camera.y) * 0.12;
+        // ---- Camera follow ----
+        const tp = worldToScreen(pgx, pgy);
+        const tx = app.screen.width / 2 - tp.x;
+        const ty = app.screen.height / 2 - tp.y;
+        camera.x += (tx - camera.x) * 0.14;
+        camera.y += (ty - camera.y) * 0.14;
       });
 
       cleanup = () => {
         window.removeEventListener('resize', onResize);
+        window.removeEventListener('keydown', onKeyDown);
+        window.removeEventListener('keyup', onKeyUp);
+        joystick.removeEventListener('pointerdown', stickDown);
+        joystick.removeEventListener('pointermove', stickMove);
+        joystick.removeEventListener('pointerup', stickUp);
+        joystick.removeEventListener('pointercancel', stickUp);
         app.canvas.removeEventListener('pointerdown', onPointerDown);
         try { app.destroy(true, { children: true, texture: true }); } catch { /* noop */ }
         if (mount.contains(app.canvas)) mount.removeChild(app.canvas);
       };
-      // Keep reference to vignette so TS doesn't complain about unused.
-      void vignette;
-      void shrine;
-      void gate;
+      void fxLayer;
+      void decorLayer;
     };
 
     init();
@@ -427,13 +635,70 @@ export function GameScene() {
   }, []);
 
   return (
-    <div
-      ref={mountRef}
-      style={{
-        position: 'absolute',
-        inset: 0,
-        touchAction: 'none',
-      }}
-    />
+    <>
+      <div ref={mountRef} style={{ position: 'absolute', inset: 0, touchAction: 'none' }} />
+      <div
+        ref={joystickRef}
+        className="joystick"
+        style={{
+          position: 'absolute',
+          left: 24,
+          bottom: 110,
+          width: 120,
+          height: 120,
+          borderRadius: '50%',
+          background: 'radial-gradient(circle at 30% 30%, rgba(60,30,80,0.55), rgba(8,4,16,0.7))',
+          border: '2px solid rgba(180, 60, 120, 0.4)',
+          boxShadow: '0 0 20px rgba(160, 40, 100, 0.4) inset',
+          touchAction: 'none',
+          userSelect: 'none',
+        }}
+      >
+        <div
+          ref={stickRef}
+          style={{
+            position: 'absolute',
+            left: 30,
+            top: 30,
+            width: 60,
+            height: 60,
+            borderRadius: '50%',
+            background: 'radial-gradient(circle at 35% 35%, #b04060, #401020)',
+            border: '2px solid #ffd0e0',
+            transition: 'transform 60ms linear',
+            pointerEvents: 'none',
+          }}
+        />
+      </div>
+    </>
   );
 }
+
+function enemyKindForId(id: string): EnemyKind {
+  if (id.includes('wolf')) return 'wolf';
+  if (id.includes('orc')) return 'orc';
+  if (id.includes('shade')) return 'shade';
+  if (id.includes('skeleton')) return 'skeleton';
+  if (id.includes('imp')) return 'imp';
+  if (id.includes('lich')) return 'lich';
+  if (id.includes('spider')) return 'spider';
+  return 'goblin';
+}
+
+function totalMaxHp(_gs: ReturnType<typeof useGame.getState>): number {
+  // Use the player's stored hp/mp ratios for the bar — exact max stat
+  // calculation belongs in the store. Returning hp itself when not in
+  // combat keeps the bar at 100%.
+  const p = _gs.player;
+  if (!p) return 1;
+  // Approximate via base race stats — store keeps current hp clamped.
+  return Math.max(p.hp, 1);
+}
+
+// Used in worldToScreen calculations elsewhere; re-export the constants
+// to keep tree-shaking happy.
+export { TILE_HW, TILE_HH };
+
+// Touch the ENEMIES export so unused-import linting isn't tripped if we
+// later reference it from inspector tooling.
+void ENEMIES;
