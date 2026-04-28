@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useGame } from '../store/game';
 import { getItem } from '../data/items';
 import { totalStats } from '../game/stats';
+import { iconFor } from '../utils/itemIcon';
 import type { EquipSlot, Item } from '../types';
 
 const SLOTS: EquipSlot[] = ['weapon', 'offhand', 'head', 'chest', 'legs', 'feet', 'ring', 'amulet'];
@@ -49,7 +50,7 @@ export function Inventory() {
                       onClick={() => setSelected(it)}
                       title={it.name}
                     >
-                      <div className="icon">{it.icon}</div>
+                      <img className="icon-img" src={iconFor(it.id)} alt="" />
                       <div style={{ fontSize: 10 }}>{it.name}</div>
                       <div className="count">×{stack.count}</div>
                     </div>
@@ -75,7 +76,11 @@ export function Inventory() {
                       }}
                       title={it ? `${it.name} (click to unequip)` : `Empty ${slot}`}
                     >
-                      <div className="icon">{it ? it.icon : '·'}</div>
+                      {it ? (
+                        <img className="icon-img" src={iconFor(it.id)} alt="" />
+                      ) : (
+                        <div className="icon dim">·</div>
+                      )}
                       <div style={{ fontSize: 10 }}>{slot}</div>
                     </div>
                   );
@@ -101,8 +106,9 @@ export function Inventory() {
                     borderRadius: 6,
                   }}
                 >
-                  <div style={{ color: 'var(--accent-2)' }}>
-                    {selected.icon} {selected.name}
+                  <div style={{ color: 'var(--accent-2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <img className="icon-img sm" src={iconFor(selected.id)} alt="" />
+                    <span>{selected.name}</span>
                   </div>
                   <div className="stats-list">
                     {selected.kind === 'equipment' &&

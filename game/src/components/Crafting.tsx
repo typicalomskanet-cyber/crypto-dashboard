@@ -1,6 +1,7 @@
 import { useGame } from '../store/game';
 import { RECIPES } from '../data/recipes';
 import { getItem } from '../data/items';
+import { iconFor } from '../utils/itemIcon';
 
 export function Crafting() {
   const player = useGame((s) => s.player);
@@ -31,8 +32,9 @@ export function Crafting() {
             return (
               <div key={r.id} className="recipe">
                 <div className="info">
-                  <div>
-                    {result?.icon} <b>{r.name}</b>{' '}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {result && <img className="icon-img sm" src={iconFor(result.id)} alt="" />}
+                    <b>{r.name}</b>{' '}
                     <small>
                       → {r.result.count}× {result?.name}
                     </small>

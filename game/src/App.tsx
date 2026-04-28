@@ -1,12 +1,38 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { useGame } from './store/game';
 import { RaceSelect } from './components/RaceSelect';
 import { HUD } from './components/HUD';
-import { Inventory } from './components/Inventory';
-import { Crafting } from './components/Crafting';
-import { Lootboxes } from './components/Lootboxes';
-import { CityBuilder } from './components/CityBuilder';
-import { GameScene } from './three/Scene';
+
+// Lazy-load heavy modal screens and the Three.js scene so the title screen
+// renders immediately and Three.js / R3F-free chunks can stream in parallel.
+const GameScene = lazy(() =>
+  import('./pixi/Scene').then((m) => ({ default: m.GameScene })),
+);
+const Inventory = lazy(() =>
+  import('./components/Inventory').then((m) => ({ default: m.Inventory })),
+);
+const Crafting = lazy(() =>
+  import('./components/Crafting').then((m) => ({ default: m.Crafting })),
+);
+const Lootboxes = lazy(() =>
+  import('./components/Lootboxes').then((m) => ({ default: m.Lootboxes })),
+);
+const CityBuilder = lazy(() =>
+  import('./components/CityBuilder').then((m) => ({ default: m.CityBuilder })),
+);
+
+function PanelFallback() {
+  return <div className="panel-fallback">Loading…</div>;
+}
+
+function SceneFallback() {
+  return (
+    <div className="scene-fallback">
+      <div className="loader-glow" />
+      <div className="loader-label">Entering the realm…</div>
+    </div>
+  );
+}
 
 export default function App() {
   const screen = useGame((s) => s.screen);
@@ -75,12 +101,16 @@ export default function App() {
 
   return (
     <div className="app">
-      <GameScene />
+      <Suspense fallback={<SceneFallback />}>
+        <GameScene />
+      </Suspense>
       <HUD />
-      {screen === 'inventory' && <Inventory />}
-      {screen === 'crafting' && <Crafting />}
-      {screen === 'lootboxes' && <Lootboxes />}
-      {screen === 'city' && <CityBuilder />}
+      <Suspense fallback={<PanelFallback />}>
+        {screen === 'inventory' && <Inventory />}
+        {screen === 'crafting' && <Crafting />}
+        {screen === 'lootboxes' && <Lootboxes />}
+        {screen === 'city' && <CityBuilder />}
+      </Suspense>
     </div>
   );
 }

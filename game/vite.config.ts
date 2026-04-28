@@ -33,9 +33,39 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,webp,woff2}'],
+        // Don't bother caching source maps offline.
+        globIgnores: ['**/*.map'],
       },
     }),
   ],
+  build: {
+    target: 'es2020',
+    minify: 'terser',
+    cssCodeSplit: false,
+    sourcemap: false,
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        passes: 2,
+      },
+      format: { comments: false },
+    },
+    rollupOptions: {
+      output: {
+        // Split heavy deps so they cache independently and load in parallel.
+        manualChunks: (id) => {
+          if (id.includes('node_modules')) {
+            if (id.includes('pixi.js') || id.includes('@pixi')) return 'pixi';
+            if (id.includes('react') || id.includes('scheduler')) return 'react';
+            if (id.includes('zustand')) return 'state';
+            return 'vendor';
+          }
+          return undefined;
+        },
+      },
+    },
+    chunkSizeWarningLimit: 800,
+  },
   server: { host: true, port: 5174 },
   preview: { host: true, port: 5174 },
 });

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useGame } from '../store/game';
 import { LOOTBOXES } from '../data/lootbox';
 import { getItem } from '../data/items';
+import { iconFor } from '../utils/itemIcon';
 
 export function Lootboxes() {
   const player = useGame((s) => s.player);
@@ -38,8 +39,9 @@ export function Lootboxes() {
                     {tier.drops.map((d) => {
                       const it = getItem(d.itemId);
                       return (
-                        <div key={d.itemId}>
-                          {it?.icon} <b>{it?.name}</b> —{' '}
+                        <div key={d.itemId} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {it && <img className="icon-img xs" src={iconFor(it.id)} alt="" />}
+                          <b>{it?.name}</b> —{' '}
                           {((d.weight / total) * 100).toFixed(1)}%
                         </div>
                       );
@@ -52,7 +54,7 @@ export function Lootboxes() {
                       const r = openLootbox(tier.id);
                       if (r) {
                         const it = getItem(r.itemId);
-                        setLastReward(`${it?.icon} ${it?.name}`);
+                        setLastReward(it?.name ?? null);
                         setTimeout(() => setLastReward(null), 2500);
                       }
                     }}

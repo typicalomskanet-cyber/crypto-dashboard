@@ -2,6 +2,7 @@ import { useGame } from '../store/game';
 import { getClass } from '../data/races';
 import { getEnemy } from '../data/enemies';
 import { totalStats, xpToNext } from '../game/stats';
+import { skillIcon } from '../utils/itemIcon';
 
 export function HUD() {
   const player = useGame((s) => s.player);
@@ -123,7 +124,7 @@ export function HUD() {
               title={`${s.name}\n${s.description}\nMP ${s.mpCost} · CD ${s.cooldown}s`}
               onClick={() => castSkill(s.id)}
             >
-              <div style={{ fontSize: 18 }}>✦</div>
+              <img className="icon-img md" src={skillIcon(s.id, s.name)} alt="" />
               <div>{s.name}</div>
             </button>
           );
@@ -134,7 +135,7 @@ export function HUD() {
           title="Use Healing Draught"
           onClick={() => consumeItem('potion_hp_s')}
         >
-          <div style={{ fontSize: 22 }}>🧪</div>
+          <img className="icon-img md" src="./icons/lorc_round-bottom-flask.svg" alt="" />
           <div>HP</div>
         </button>
         <button
@@ -143,7 +144,7 @@ export function HUD() {
           title="Use Mana Draught"
           onClick={() => consumeItem('potion_mp_s')}
         >
-          <div style={{ fontSize: 22 }}>🔮</div>
+          <img className="icon-img md" src="./icons/lorc_potion-ball.svg" alt="" />
           <div>MP</div>
         </button>
       </div>

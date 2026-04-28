@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useGame } from '../store/game';
 import { BUILDINGS, CITY_GRID_SIZE, getBuilding } from '../data/buildings';
 import { getItem } from '../data/items';
+import { buildingIcon } from '../utils/itemIcon';
 
 export function CityBuilder() {
   const player = useGame((s) => s.player);
@@ -96,8 +97,9 @@ export function CityBuilder() {
                       setMode('build');
                     }}
                   >
-                    <h4>
-                      <span style={{ color: b.color }}>■</span> {b.name}
+                    <h4 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <img className="icon-img sm" src={buildingIcon(b.id)} alt="" style={{ filter: `drop-shadow(0 0 4px ${b.color})` }} />
+                      {b.name}
                     </h4>
                     <p style={{ color: 'var(--text-dim)', marginTop: 4 }}>
                       {b.description}
