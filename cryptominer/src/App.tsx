@@ -534,6 +534,9 @@ function App() {
   const [unlockedAchs, setUnlockedAchs] = useState<string[]>([])
   const [seasonLog, setSeasonLog] = useState<string[]>([])
   const [nftMarket, setNftMarket] = useState<NftListing[]>([])
+  // Draft prices entered by the user when listing NFTs for sale; submitted
+  // explicitly via the "Выставить" button so partial keystrokes don't list.
+  const [nftSellDraft, setNftSellDraft] = useState<Record<string, string>>({})
 
   // === Сохранение и загрузка прогресса ===
   const saveGame = useCallback(() => {
@@ -597,18 +600,6 @@ function App() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Автосохранение при изменении важных данных
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (balance > 280 || Object.keys(holdings).length > 0 || racks.length > 1) {
-        const saveData = {
-          balance, holdings, racks, city, nftInventory, unlockedAchs, exchange, seasonLog: [], timestamp: Date.now()
-        }
-        localStorage.setItem('cryptominer_save', JSON.stringify(saveData))
-      }
-    }, 3000)
-    return () => clearTimeout(timer)
-  }, [balance, holdings, racks, city, nftInventory, unlockedAchs, exchange])
 
   const sel = useMemo(() => assets.find(a => a.symbol === sym) ?? assets[0], [assets, sym])
   const portVal = useMemo(() => balance + Object.entries(holdings).reduce((s, [k, v]) => {
@@ -861,8 +852,10 @@ function App() {
         for (const pos of prev) {
           const a = assets.find(x => x.symbol === pos.symbol)
           if (!a) { surviving.push(pos); continue }
-          if (pos.side === 'long' && a.price <= pos.liqPrice) { setBalance(b => b - pos.margin); continue }
-          if (pos.side === 'short' && a.price >= pos.liqPrice) { setBalance(b => b - pos.margin); continue }
+          // Margin was already debited when the position was opened, so liquidation
+          // simply forfeits it — no second deduction here.
+          if (pos.side === 'long' && a.price <= pos.liqPrice) { continue }
+          if (pos.side === 'short' && a.price >= pos.liqPrice) { continue }
           surviving.push(pos)
         }
         return surviving
@@ -1152,8 +1145,12 @@ function App() {
 
     // 65% шанс успеха, 35% шанс поломки
     if (Math.random() < 0.65) {
+      const overclockEnd = Date.now() + 3 * 60 * 1000 // +30% мощности на 3 минуты
+      setRacks(p => p.map(r => r.id === rackId ? {
+        ...r,
+        slots: r.slots.map(s => s.id === slotId ? { ...s, overclockEnd } : s)
+      } : r))
       setSeasonLog(prev => [`⚡ Overclock успешен! +30% мощности на 3 минуты`, ...prev].slice(0, 20))
-      // В реальной реализации нужно хранить временный буст
     } else {
       // Поломка
       setRacks(p => p.map(r => r.id === rackId ? {
@@ -1196,7 +1193,12 @@ function App() {
       seller: 'You',
       price
     }])
-    setNftInventory(prev => prev.filter(id => id !== nftId))
+    setNftInventory(prev => {
+      const next = [...prev]
+      const idx = next.indexOf(nftId)
+      if (idx !== -1) next.splice(idx, 1)
+      return next
+    })
     setSeasonLog(prev => [`🏷️ Выставлен на продажу: ${NFT_MINERS.find(n => n.id === nftId)?.name} за $${price}`, ...prev].slice(0, 15))
   }, [nftInventory])
 
@@ -1389,22 +1391,42 @@ function App() {
                 <div className="nft-sell-section">
                   <h4>Выставить NFT на продажу</h4>
                   <div className="nft-inventory-list">
-                    {nftInventory.map(nftId => {
+                    {nftInventory.map((nftId, idx) => {
                       const nft = NFT_MINERS.find(n => n.id === nftId)
                       if (!nft) return null
+                      const draftKey = `${nftId}-${idx}`
+                      const draft = nftSellDraft[draftKey] ?? ''
+                      const price = parseInt(draft) || 0
+                      const submit = () => {
+                        if (price <= 0) return
+                        listNftForSale(nftId, price)
+                        setNftSellDraft(prev => {
+                          const next = { ...prev }
+                          delete next[draftKey]
+                          return next
+                        })
+                      }
                       return (
-                        <div key={nftId} className="nft-sell-item">
+                        <div key={draftKey} className="nft-sell-item">
                           <span>{nft.icon} {nft.name}</span>
-                          <input 
-                            type="number" 
-                            placeholder="Цена" 
-                            onChange={(e) => {
-                              const price = parseInt(e.target.value) || 0
-                              if (price > 0) {
-                                listNftForSale(nftId, price)
-                              }
+                          <input
+                            type="number"
+                            placeholder="Цена"
+                            value={draft}
+                            onChange={(e) =>
+                              setNftSellDraft(prev => ({ ...prev, [draftKey]: e.target.value }))
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') submit()
                             }}
                           />
+                          <button
+                            className="nft-sell-submit"
+                            disabled={price <= 0}
+                            onClick={submit}
+                          >
+                            Выставить
+                          </button>
                         </div>
                       )
                     })}
@@ -1555,12 +1577,22 @@ function App() {
                                        <>
                                          <button className="roller-sell-rig" onClick={() => sellMiner(rack.id, slot.id)}>Sell (+${Math.floor(miner.cost * minerDiscount * 0.7)})</button>
                                          <button className="roller-overclock" onClick={() => overclockMiner(rack.id, slot.id)}>⚡ Overclock</button>
-                                         <button className="roller-repair" onClick={() => repairMiner(rack.id, slot.id)}>🔧 Repair</button>
                                        </>
                                      ) : null}
                                     <div className="roller-rig-leds"><i className={`led ${isNft ? 'nft-led' : 'blink'}`}/><i className="led blink-fast"/><i className="led solid"/></div>
                                   </div>
-                                ) : <div className="roller-empty-label">Empty Slot</div>}
+                                ) : (
+                                  <div className="roller-empty-content">
+                                    <div className="roller-empty-label">Empty Slot</div>
+                                    <button
+                                      className="roller-repair"
+                                      disabled={balance < 80}
+                                      onClick={() => repairMiner(rack.id, slot.id)}
+                                    >
+                                      🔧 Repair ($80)
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             )
                           })}
