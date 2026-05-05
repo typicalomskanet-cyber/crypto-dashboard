@@ -21,7 +21,9 @@ import { MOBS } from "./data/mobs";
 import { BUILDINGS } from "./data/buildings";
 import { Joystick } from "./ui/Joystick";
 import { InventoryPanel, CraftingPanel, LootboxPanel } from "./ui/Panels";
-import type { MobInstance } from "./three/World";
+import { SkillBar } from "./ui/SkillBar";
+import { SKILLS_BY_CLASS, type SkillDef } from "./data/skills";
+import type { CameraMode, MobInstance } from "./three/World";
 
 // Lazy-load heavy 3D modules so initial paint stays small.
 const RaceSelect = lazy(() => import("./three/RaceSelect"));
@@ -115,6 +117,16 @@ export default function App() {
   const [log, setLog] = useState<{ msg: string; ts: number }[]>([]);
   const [lastDrop, setLastDrop] = useState<ItemDef | null>(null);
   const [selectedBuildDef, setSelectedBuildDef] = useState<string | null>(null);
+  const [cameraMode, setCameraMode] = useState<CameraMode>("thirdPerson");
+  const [zoom, setZoom] = useState(0.45);
+  /** Map skill.id → cooldown-end timestamp (ms). */
+  const [cooldowns, setCooldowns] = useState<Record<string, number>>({});
+  /** Active buff (atk multiplier) from a Heroic Cry / Bloodlust style skill. */
+  const [buff, setBuff] = useState<{ skillId: string; mul: number; until: number } | null>(null);
+
+  const pushLog = useCallback((msg: string) => {
+    setLog(prev => [{ msg, ts: Date.now() }, ...prev].slice(0, 8));
+  }, []);
 
   // === Load on mount ===
   useEffect(() => {
@@ -146,9 +158,18 @@ export default function App() {
   }, [player]);
 
   // === Effective stats include equipment ===
+  // We deliberately depend on `buff` so that re-cooking attacks happens when a
+  // buff is granted; the actual time-decay is handled in the attack handler.
   const effectiveStats = useMemo(
-    () => (player ? applyEquipment(player.stats, player.equipment) : null),
-    [player],
+    () => {
+      if (!player) return null;
+      const base = applyEquipment(player.stats, player.equipment);
+      if (buff && buff.until > Date.now()) {
+        return { ...base, atk: Math.floor(base.atk * buff.mul) };
+      }
+      return base;
+    },
+    [player, buff],
   );
 
   // === Smithy discount + max-hp from buildings ===
@@ -306,28 +327,71 @@ export default function App() {
   useEffect(() => {
     if (!player || !effectiveStats) return;
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ uid: string }>).detail;
-      const targetUid = detail.uid;
-      setMobs(prev => {
-        const idx = prev.findIndex(m => m.uid === targetUid);
-        if (idx < 0) return prev;
-        const m = prev[idx];
-        if (m.deadUntil) return prev;
-        const def = MOBS.find(d => d.id === m.defId)!;
+      const detail = (e as CustomEvent<{
+        uid: string;
+        mul?: number;
+        aoeRadius?: number;
+        skillName?: string;
+        drainHeal?: boolean;
+      }>).detail;
+      const mul = detail.mul ?? 1.0;
+      const skillTag = detail.skillName ? ` [${detail.skillName}]` : "";
+      const damageOne = (_m: MobInstance, def: typeof MOBS[number]) => {
         const isCrit = Math.random() * 100 < effectiveStats.crit;
         const raw = Math.max(1, effectiveStats.atk - Math.floor(def.hp * 0.01));
-        const dmg = Math.floor(raw * (isCrit ? 1.8 : 1) * (0.85 + Math.random() * 0.3));
-        const newHp = m.hp - dmg;
+        const dmg = Math.floor(raw * mul * (isCrit ? 1.8 : 1) * (0.85 + Math.random() * 0.3));
+        return { dmg, isCrit };
+      };
+      setMobs(prev => {
         const next = [...prev];
-        if (newHp <= 0) {
-          next[idx] = { ...m, hp: 0, deadUntil: Date.now() + 15_000, aggro: false };
-          rewardKill(def.id);
-          if (selectedMob === m.uid) setSelectedMob(null);
-          pushLog(`${def.name} slain — ${isCrit ? "CRIT! " : ""}${dmg} dmg.`);
+        const center = prev.find(m => m.uid === detail.uid);
+        const targets: number[] = [];
+        if (detail.aoeRadius && center) {
+          for (let i = 0; i < prev.length; i++) {
+            const m = prev[i];
+            if (m.deadUntil) continue;
+            const d = Math.hypot(m.pos[0] - center.pos[0], m.pos[2] - center.pos[2]);
+            if (d <= detail.aoeRadius) targets.push(i);
+          }
         } else {
-          next[idx] = { ...m, hp: newHp, aggro: true };
-          pushLog(`${def.name}: -${dmg}${isCrit ? " (crit)" : ""}`);
+          const i = prev.findIndex(m => m.uid === detail.uid);
+          if (i >= 0 && !prev[i].deadUntil) targets.push(i);
         }
+        let totalDmg = 0;
+        let killed = 0;
+        for (const i of targets) {
+          const m = next[i];
+          const def = MOBS.find(d => d.id === m.defId)!;
+          const { dmg, isCrit } = damageOne(m, def);
+          totalDmg += dmg;
+          const newHp = m.hp - dmg;
+          if (newHp <= 0) {
+            next[i] = { ...m, hp: 0, deadUntil: Date.now() + 15_000, aggro: false };
+            rewardKill(def.id);
+            if (selectedMob === m.uid) setSelectedMob(null);
+            pushLog(`${def.name} slain${skillTag} — ${isCrit ? "CRIT! " : ""}${dmg} dmg.`);
+            killed++;
+          } else {
+            next[i] = { ...m, hp: newHp, aggro: true };
+            if (!detail.aoeRadius) pushLog(`${def.name}: -${dmg}${isCrit ? " (crit)" : ""}${skillTag}`);
+          }
+        }
+        if (detail.aoeRadius && targets.length > 0) {
+          pushLog(`${detail.skillName ?? "AoE"} hits ${targets.length} foes for ${totalDmg} total.`);
+        }
+        // Soul Drain heals 60% of damage dealt back to player.
+        if (detail.drainHeal && totalDmg > 0) {
+          setPlayer(p => {
+            if (!p) return p;
+            const stats = applyEquipment(p.stats, p.equipment);
+            const heal = Math.floor(totalDmg * 0.6);
+            return {
+              ...p,
+              stats: { ...p.stats, hp: Math.min(stats.hpMax, p.stats.hp + heal) },
+            };
+          });
+        }
+        if (killed > 0 && detail.aoeRadius) pushLog(`${killed} foe(s) destroyed.`);
         return next;
       });
     };
@@ -336,9 +400,86 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player, effectiveStats, selectedMob]);
 
-  const pushLog = useCallback((msg: string) => {
-    setLog(prev => [{ msg, ts: Date.now() }, ...prev].slice(0, 8));
-  }, []);
+  // === Cast a skill (keyboard hotkey or click) ===
+  const castSkill = useCallback(
+    (skill: SkillDef) => {
+      if (!player) return;
+      const now = Date.now();
+      if ((cooldowns[skill.id] ?? 0) > now) return;
+      if (player.stats.mp < skill.mp) {
+        pushLog(`Not enough MP for ${skill.name}.`);
+        return;
+      }
+      // Deduct mana.
+      setPlayer(p =>
+        p ? { ...p, stats: { ...p.stats, mp: Math.max(0, p.stats.mp - skill.mp) } } : p,
+      );
+      if (skill.cd > 0) {
+        setCooldowns(c => ({ ...c, [skill.id]: now + skill.cd * 1000 }));
+      }
+      if (skill.kind === "heal" && skill.heal) {
+        setPlayer(p => {
+          if (!p) return p;
+          const stats = applyEquipment(p.stats, p.equipment);
+          return {
+            ...p,
+            stats: { ...p.stats, hp: Math.min(stats.hpMax, p.stats.hp + skill.heal!) },
+          };
+        });
+        pushLog(`${skill.name} restores ${skill.heal} HP.`);
+        return;
+      }
+      if (skill.kind === "buff" && skill.buffAtk && skill.buffDur) {
+        setBuff({ skillId: skill.id, mul: skill.buffAtk, until: now + skill.buffDur * 1000 });
+        pushLog(`${skill.name} active for ${skill.buffDur}s.`);
+        return;
+      }
+      // Damage skills require a target; AoE uses selected as center.
+      if (!selectedMob) {
+        pushLog(`No target for ${skill.name}.`);
+        return;
+      }
+      window.dispatchEvent(
+        new CustomEvent("cdg:attack", {
+          detail: {
+            uid: selectedMob,
+            mul: skill.dmgMul,
+            aoeRadius: skill.kind === "aoe" ? skill.radius : undefined,
+            skillName: skill.name,
+            drainHeal: skill.id === "wl_curse",
+          },
+        }),
+      );
+    },
+    [player, cooldowns, selectedMob, pushLog],
+  );
+
+  // === Hotkeys 1..4 cast skills, 5..6 reserved for potions later ===
+  useEffect(() => {
+    if (!player || screen !== "world") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      const idx = "1234".indexOf(e.key);
+      if (idx < 0) return;
+      const skills = SKILLS_BY_CLASS[player.cls] ?? SKILLS_BY_CLASS.knight;
+      const s = skills[idx];
+      if (s) castSkill(s);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [player, screen, castSkill]);
+
+  // === Tick cooldown UI every 200ms (just bumps state via buff timer expiry) ===
+  useEffect(() => {
+    if (!player || screen !== "world") return;
+    const iv = setInterval(() => {
+      setBuff(b => (b && b.until <= Date.now() ? null : b));
+      // Cooldown values are timestamps; we only need to re-render to update
+      // remaining-time pills. Trigger by re-setting same map (cheap in React).
+      setCooldowns(c => ({ ...c }));
+    }, 200);
+    return () => clearInterval(iv);
+  }, [player, screen]);
 
   const rewardKill = useCallback(
     (defId: string) => {
@@ -641,6 +782,9 @@ export default function App() {
           movementInput={movementInput}
           onSelectMob={setSelectedMob}
           city={player.city}
+          cameraMode={cameraMode}
+          zoom={zoom}
+          onZoomChange={setZoom}
         />
       </Suspense>
 
@@ -711,6 +855,56 @@ export default function App() {
           <li key={l.ts + "-" + i}>{l.msg}</li>
         ))}
       </ul>
+
+      {/* Skill bar — Diablo-style 1..4 hotkeys */}
+      <SkillBar
+        cls={player.cls}
+        mp={player.stats.mp}
+        cooldowns={cooldowns}
+        buffSkill={buff?.skillId ?? null}
+        buffUntil={buff?.until ?? null}
+        onCast={castSkill}
+      />
+
+      {/* Camera mode + zoom (top-right) */}
+      <div className="hud-cam">
+        <button
+          className={cameraMode === "thirdPerson" ? "cam-active" : ""}
+          onClick={() => setCameraMode("thirdPerson")}
+          title="Camera follows behind player"
+        >
+          🎥 Third-Person
+        </button>
+        <button
+          className={cameraMode === "topDown" ? "cam-active" : ""}
+          onClick={() => setCameraMode("topDown")}
+          title="Top-down strategic view"
+        >
+          🛰️ Top-Down
+        </button>
+        <div className="cam-zoom">
+          <button
+            onClick={() => setZoom(z => Math.max(0, z - 0.1))}
+            title="Zoom in (closer)"
+          >
+            ➖
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.02}
+            value={zoom}
+            onChange={e => setZoom(parseFloat(e.target.value))}
+          />
+          <button
+            onClick={() => setZoom(z => Math.min(1, z + 0.1))}
+            title="Zoom out (further)"
+          >
+            ➕
+          </button>
+        </div>
+      </div>
 
       {/* Touch joystick */}
       <Joystick onChange={setMovementInput} />

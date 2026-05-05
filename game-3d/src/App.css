@@ -177,6 +177,131 @@ button { font-family: inherit; }
 .hud-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
 .cls-pick { font-family: inherit; }
 
+/* Skill bar (Diablo-style) — bottom centre, above .hud-actions */
+.skill-bar {
+  position: absolute;
+  bottom: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex; gap: 8px;
+  z-index: 11;
+  pointer-events: auto;
+  background: rgba(8,10,24,0.6);
+  padding: 6px;
+  border: 1px solid #2a2d4a;
+  border-radius: 10px;
+  backdrop-filter: blur(4px);
+}
+.skill-slot {
+  position: relative;
+  width: 56px; height: 56px;
+  background: rgba(20,24,48,0.95);
+  border: 2px solid #2a2d4a;
+  border-radius: 8px;
+  font-size: 26px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .12s;
+  overflow: hidden;
+  font-family: inherit;
+  color: #d8dcf2;
+}
+.skill-slot:hover:not(.skill-disabled) {
+  border-color: #ffd864;
+  box-shadow: 0 0 14px rgba(255,216,100,0.5);
+}
+.skill-slot.skill-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+}
+.skill-slot.skill-buffed {
+  border-color: #a060ff;
+  box-shadow: 0 0 16px rgba(160,96,255,0.7);
+}
+.skill-icon { font-size: 28px; line-height: 1; }
+.skill-key {
+  position: absolute; top: 2px; left: 4px;
+  font-size: 10px; font-weight: 700; color: #ffd864;
+  text-shadow: 0 0 4px #000, 0 0 4px #000;
+  pointer-events: none;
+}
+.skill-cd-overlay {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(to top, rgba(60,40,90,0.7), rgba(20,24,48,0.4));
+  pointer-events: none;
+  transition: height .1s linear;
+}
+.skill-cd-text {
+  position: absolute;
+  top: 50%; left: 50%; transform: translate(-50%, -50%);
+  font-size: 11px; font-weight: 700; color: #fff8d8;
+  text-shadow: 0 0 5px #000;
+  pointer-events: none;
+}
+.skill-buff-glow {
+  position: absolute; inset: -2px;
+  border-radius: 8px;
+  border: 2px solid #a060ff;
+  animation: skillBuffPulse 1.4s infinite ease-in-out;
+  pointer-events: none;
+}
+@keyframes skillBuffPulse {
+  0%, 100% { opacity: 0.4; box-shadow: 0 0 8px #a060ff; }
+  50%      { opacity: 1.0; box-shadow: 0 0 18px #a060ff; }
+}
+@media (max-width: 640px) {
+  .skill-bar { bottom: 56px; gap: 6px; padding: 4px; }
+  .skill-slot { width: 46px; height: 46px; font-size: 22px; }
+  .skill-icon { font-size: 22px; }
+}
+
+/* Camera mode + zoom controls (top-right, below target frame) */
+.hud-cam {
+  position: absolute; top: 200px; right: 12px;
+  z-index: 11;
+  display: flex; flex-direction: column; gap: 6px;
+  background: rgba(10,12,28,0.85);
+  border: 1px solid #2a2d4a;
+  border-radius: 8px;
+  padding: 8px;
+  pointer-events: auto;
+  min-width: 168px;
+}
+.hud-cam button {
+  background: rgba(20,24,48,0.9);
+  border: 1px solid #2a2d4a;
+  color: #d8dcf2;
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .12s;
+  font-family: inherit;
+}
+.hud-cam button:hover { border-color: #ffd864; color: #ffd864; }
+.hud-cam button.cam-active {
+  background: rgba(160,96,255,0.22);
+  border-color: #a060ff;
+  color: #ffd0ff;
+}
+.hud-cam .cam-zoom {
+  display: flex; align-items: center; gap: 4px;
+  margin-top: 2px;
+}
+.hud-cam .cam-zoom input[type=range] {
+  flex: 1; min-width: 0;
+  accent-color: #a060ff;
+}
+.hud-cam .cam-zoom button {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+@media (max-width: 640px) {
+  .hud-cam { top: auto; bottom: 70px; right: 12px; min-width: 140px; }
+}
+
 .hud-log {
   position: absolute; bottom: 80px; right: 12px;
   list-style: none;

@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { MobDef } from "../types";
+import { GLTFMobInner, hasGLTFMob } from "./GLTFMob";
 
 export interface MobProps {
   def: MobDef;
@@ -10,6 +11,7 @@ export interface MobProps {
   hpMax: number;
   selected?: boolean;
   walking?: boolean;
+  attackKey?: number;
   onPick?: () => void;
 }
 
@@ -17,7 +19,33 @@ export interface MobProps {
  * Procedural low-poly mob. Body shape varies a bit by mob id to give
  * silhouette diversity without paying for unique models.
  */
-export function Mob({ def, position, hp, hpMax, selected, walking, onPick }: MobProps) {
+export function Mob(props: MobProps) {
+  // Prefer KayKit-rigged mob if available; fall back to procedural otherwise.
+  return hasGLTFMob(props.def.id) ? <MobGLTF {...props} /> : <MobProcedural {...props} />;
+}
+
+function MobGLTF({ def, position, hp, hpMax, selected, walking, attackKey, onPick }: MobProps) {
+  return (
+    <group position={position} onPointerDown={onPick}>
+      <GLTFMobInner
+        def={def}
+        position={[0, 0, 0]}
+        walking={walking}
+        attackKey={attackKey}
+        onPick={onPick}
+      />
+      <HpBar hp={hp} hpMax={hpMax} y={2.4 * (def.scale ?? 1)} selected={selected} />
+      <NameTag
+        name={def.name}
+        y={2.7 * (def.scale ?? 1)}
+        level={def.level}
+        bossy={def.bossy}
+      />
+    </group>
+  );
+}
+
+function MobProcedural({ def, position, hp, hpMax, selected, walking, onPick }: MobProps) {
   const root = useRef<THREE.Group>(null);
   const head = useRef<THREE.Mesh>(null);
   const torso = useRef<THREE.Mesh>(null);

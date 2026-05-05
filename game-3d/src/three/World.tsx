@@ -1,13 +1,15 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Suspense, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { Avatar } from "./Avatar";
+import { GLTFAvatar } from "./GLTFAvatar";
 import { Mob } from "./Mob";
 import type { Player, PlacedBuilding } from "../types";
 import { MOBS } from "../data/mobs";
 import { BUILDINGS, CITY_HALF, CITY_TILE_SIZE } from "../data/buildings";
 
 const WORLD_HALF = 24;
+
+export type CameraMode = "thirdPerson" | "topDown";
 
 export interface MobInstance {
   uid: string;
@@ -29,6 +31,12 @@ export interface WorldProps {
   onSelectMob: (uid: string | null) => void;
   /** Show city footprint — buildings the player has placed. */
   city: PlacedBuilding[];
+  /** Camera mode (third-person follow vs top-down view). */
+  cameraMode?: CameraMode;
+  /** Zoom level [0..1]; bigger = further from player. */
+  zoom?: number;
+  /** Notify parent when zoom changes via wheel/pinch. */
+  onZoomChange?: (z: number) => void;
 }
 
 export default function World(props: WorldProps) {
@@ -170,10 +178,56 @@ function CityFootprint({ city, placed }: { city: PlacedBuilding[]; placed?: bool
 function Scene(props: WorldProps) {
   const playerRef = useRef<THREE.Group>(null);
   const camTarget = useRef(new THREE.Vector3(0, 1, 0));
-  const { camera } = useThree();
+  const { camera, gl } = useThree();
   const lastAttack = useRef(0);
   const [walking, setWalking] = useState(false);
   const [attackKey, setAttackKey] = useState(0);
+  const [mobAttackKeys, setMobAttackKeys] = useState<Record<string, number>>({});
+
+  // Zoom state — controlled by parent or local fallback.
+  const zoomRef = useRef(props.zoom ?? 0.5);
+  useEffect(() => {
+    zoomRef.current = props.zoom ?? zoomRef.current;
+  }, [props.zoom]);
+
+  // Wheel + pinch zoom on the canvas DOM element.
+  useEffect(() => {
+    const dom = gl.domElement;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const next = THREE.MathUtils.clamp(zoomRef.current + e.deltaY * 0.0012, 0, 1);
+      zoomRef.current = next;
+      props.onZoomChange?.(next);
+    };
+    let pinchStartDist = 0;
+    let pinchStartZoom = 0.5;
+    const dist = (a: Touch, b: Touch) =>
+      Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        pinchStartDist = dist(e.touches[0], e.touches[1]);
+        pinchStartZoom = zoomRef.current;
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && pinchStartDist > 0) {
+        e.preventDefault();
+        const d = dist(e.touches[0], e.touches[1]);
+        const ratio = pinchStartDist / d;
+        const next = THREE.MathUtils.clamp(pinchStartZoom * ratio, 0, 1);
+        zoomRef.current = next;
+        props.onZoomChange?.(next);
+      }
+    };
+    dom.addEventListener("wheel", onWheel, { passive: false });
+    dom.addEventListener("touchstart", onTouchStart, { passive: true });
+    dom.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => {
+      dom.removeEventListener("wheel", onWheel);
+      dom.removeEventListener("touchstart", onTouchStart);
+      dom.removeEventListener("touchmove", onTouchMove);
+    };
+  }, [gl, props]);
 
   useFrame((_, dt) => {
     const p = playerRef.current;
@@ -183,12 +237,21 @@ function Scene(props: WorldProps) {
     const dx = m.x;
     const dz = m.z;
     const mag = Math.hypot(dx, dz);
+    const mode: CameraMode = props.cameraMode ?? "thirdPerson";
+
     if (mag > 0.1) {
-      // Move in camera-aligned frame
-      const camDir = new THREE.Vector3();
-      camera.getWorldDirection(camDir);
-      camDir.y = 0;
-      camDir.normalize();
+      // Move in camera-aligned frame.
+      let camDir: THREE.Vector3;
+      if (mode === "topDown") {
+        // In top-down, camera looks straight down — use world axes directly so
+        // joystick/WASD feel intuitive (W = up on screen = -Z).
+        camDir = new THREE.Vector3(0, 0, -1);
+      } else {
+        camDir = new THREE.Vector3();
+        camera.getWorldDirection(camDir);
+        camDir.y = 0;
+        camDir.normalize();
+      }
       const right = new THREE.Vector3().crossVectors(camDir, new THREE.Vector3(0, 1, 0));
       const move = new THREE.Vector3()
         .addScaledVector(camDir, -dz)
@@ -208,20 +271,36 @@ function Scene(props: WorldProps) {
       setWalking(false);
     }
 
-    // Persist to player.pos so the parent state can survive reloads
+    // Persist to player.pos so the parent state can survive reloads.
     props.player.pos = [p.position.x, 0, p.position.z];
 
-    // Camera follow (third-person)
-    const off = new THREE.Vector3(0, 4.2, 7.0).applyAxisAngle(
-      new THREE.Vector3(0, 1, 0),
-      p.rotation.y,
-    );
+    // --- Camera --------------------------------------------------------------
+    const z = zoomRef.current; // 0..1
+    let off: THREE.Vector3;
+    let lookAtY = 1.4;
+    if (mode === "topDown") {
+      // High orbit-like view straight down. zoom maps height 8..36.
+      const height = THREE.MathUtils.lerp(8, 36, z);
+      off = new THREE.Vector3(0, height, 0.01);
+      lookAtY = 0;
+    } else {
+      // Third-person follow behind player; zoom maps distance 4..16.
+      const dist = THREE.MathUtils.lerp(4, 16, z);
+      const heightRatio = THREE.MathUtils.lerp(0.55, 0.7, z);
+      off = new THREE.Vector3(0, dist * heightRatio, dist).applyAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        p.rotation.y,
+      );
+    }
     const desiredCam = p.position.clone().add(off);
-    camera.position.lerp(desiredCam, Math.min(1, dt * 4));
-    camTarget.current.lerp(p.position.clone().add(new THREE.Vector3(0, 1.4, 0)), Math.min(1, dt * 4));
+    camera.position.lerp(desiredCam, Math.min(1, dt * 5));
+    camTarget.current.lerp(
+      p.position.clone().add(new THREE.Vector3(0, lookAtY, 0)),
+      Math.min(1, dt * 5),
+    );
     camera.lookAt(camTarget.current);
 
-    // Auto-attack selected mob if in range (every 1.0s)
+    // Auto-attack selected mob if in range (every 1.0s).
     if (props.selectedMob) {
       const m = props.mobs.find(x => x.uid === props.selectedMob);
       if (m && m.hp > 0) {
@@ -230,6 +309,7 @@ function Scene(props: WorldProps) {
           if (performance.now() - lastAttack.current > 1000) {
             lastAttack.current = performance.now();
             setAttackKey(k => k + 1);
+            setMobAttackKeys(prev => ({ ...prev, [m.uid]: (prev[m.uid] ?? 0) + 1 }));
             window.dispatchEvent(
               new CustomEvent("cdg:attack", { detail: { uid: m.uid } }),
             );
@@ -242,7 +322,7 @@ function Scene(props: WorldProps) {
   return (
     <group>
       <group ref={playerRef} position={props.player.pos}>
-        <Avatar
+        <GLTFAvatar
           race={props.player.race}
           cls={props.player.cls}
           walking={walking}
@@ -274,6 +354,7 @@ function Scene(props: WorldProps) {
             hpMax={def.hp}
             selected={m.uid === props.selectedMob}
             walking={m.aggro}
+            attackKey={mobAttackKeys[m.uid]}
             onPick={() => props.onSelectMob(m.uid)}
           />
         );

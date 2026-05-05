@@ -34,8 +34,9 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,webp,woff2}"],
+        globPatterns: ["**/*.{js,css,html,svg,png,webp,woff2,glb,gltf,bin}"],
         globIgnores: ["**/*.map"],
+        maximumFileSizeToCacheInBytes: 16 * 1024 * 1024,
         // External market APIs should always be live, not cached.
         navigateFallback: "index.html",
         runtimeCaching: [

@@ -1,9 +1,9 @@
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { Avatar } from "./Avatar";
+import { GLTFAvatar } from "./GLTFAvatar";
 import { RACES, CLASSES } from "../data/races";
 import type { ClassId, RaceId } from "../types";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 
 export interface RaceSelectProps {
   onConfirm(payload: { name: string; race: RaceId; cls: ClassId }): void;
@@ -84,12 +84,14 @@ export default function RaceSelect({ onConfirm }: RaceSelectProps) {
                     roughness={0.7}
                   />
                 </mesh>
-                <Avatar
-                  race={r.id}
-                  cls={r.startingClasses[0]}
-                  position={[0, 0.3, 0]}
-                  scale={1.1}
-                />
+                <Suspense fallback={null}>
+                  <GLTFAvatar
+                    race={r.id}
+                    cls={r.startingClasses[0]}
+                    position={[0, 0.3, 0]}
+                    scale={1.0}
+                  />
+                </Suspense>
                 {/* selection halo */}
                 {isPicked && (
                   <mesh position={[0, 0.32, 0]} rotation-x={-Math.PI / 2}>
