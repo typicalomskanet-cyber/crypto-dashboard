@@ -1,0 +1,15 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+.env
+.vite/
+android/
+ios/
+*.apk
+*.aab
+.DS_Store
+.cache/
+.idea/
+.vscode/
+*.log
