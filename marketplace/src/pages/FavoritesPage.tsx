@@ -1,10 +1,11 @@
-import { PRODUCT_BY_ID } from "../data/products";
+import { useCatalog } from "../lib/catalog";
 import { ProductGrid } from "../components/ProductGrid";
 import { buildHref, type ShopCtx } from "../App";
 
 export function FavoritesPage({ ctx }: { ctx: ShopCtx }) {
+  const { productById } = useCatalog();
   const products = ctx.favorites
-    .map(id => PRODUCT_BY_ID.get(id))
+    .map(id => productById.get(id))
     .filter((p): p is NonNullable<typeof p> => !!p);
 
   return (

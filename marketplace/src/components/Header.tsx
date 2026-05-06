@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { CATEGORIES } from "../data/categories";
-import { searchProducts } from "../data/products";
+import { useEffect, useMemo, useState } from "react";
+import { useCategories, useSearchProducts, useCatalog } from "../lib/catalog";
 import { buildHref, navigate, type Route } from "../App";
 import { formatPrice } from "../lib/format";
 import { Logo } from "./Logo";
@@ -15,17 +14,17 @@ export function Header({ cartCount, favoriteCount, currentRoute }: HeaderProps) 
   const [search, setSearch] = useState("");
   const [showCats, setShowCats] = useState(false);
   const [showSuggest, setShowSuggest] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const CATEGORIES = useCategories();
+  const { settings } = useCatalog();
+  void settings;
 
   // Sync search input with current route when on a search page (browser back).
   useEffect(() => {
     if (currentRoute.name === "search") setSearch(currentRoute.q);
   }, [currentRoute]);
 
-  const suggestions = useMemo(
-    () => (search.trim().length >= 2 ? searchProducts(search).slice(0, 6) : []),
-    [search],
-  );
+  const allMatches = useSearchProducts(search.trim().length >= 2 ? search : "");
+  const suggestions = useMemo(() => allMatches.slice(0, 6), [allMatches]);
 
   function submitSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -63,7 +62,6 @@ export function Header({ cartCount, favoriteCount, currentRoute }: HeaderProps) 
           role="search"
         >
           <input
-            ref={inputRef}
             type="search"
             value={search}
             onChange={e => {
@@ -110,7 +108,12 @@ export function Header({ cartCount, favoriteCount, currentRoute }: HeaderProps) 
           )}
         </form>
 
-        <nav className="ml-auto hidden items-center gap-2 sm:flex">
+        <nav className="ml-auto hidden items-center gap-1 sm:flex">
+          <NavBtn
+            icon={<NewsIcon />}
+            label="Новости"
+            href={buildHref({ name: "news" })}
+          />
           <NavBtn
             icon={<HeartIcon />}
             label="Избранное"
@@ -126,7 +129,14 @@ export function Header({ cartCount, favoriteCount, currentRoute }: HeaderProps) 
         </nav>
 
         {/* Mobile-only icons (search button is always visible inside the form) */}
-        <nav className="ml-auto flex items-center gap-1 sm:hidden">
+        <nav className="ml-auto flex items-center gap-0.5 sm:hidden">
+          <a
+            href={buildHref({ name: "news" })}
+            className="flex h-11 w-11 items-center justify-center rounded-xl text-ink-2 hover:text-ink"
+            aria-label="Новости"
+          >
+            <NewsIcon />
+          </a>
           <a
             href={buildHref({ name: "favorites" })}
             className="relative flex h-11 w-11 items-center justify-center rounded-xl text-ink-2 hover:text-ink"
@@ -159,6 +169,13 @@ export function Header({ cartCount, favoriteCount, currentRoute }: HeaderProps) 
               {c.name}
             </a>
           ))}
+          <span className="mx-2 h-4 w-px bg-line" aria-hidden="true" />
+          <a
+            href={buildHref({ name: "news" })}
+            className="whitespace-nowrap rounded-lg px-3 py-1.5 font-semibold text-brand hover:bg-brand-light"
+          >
+            📰 Новости
+          </a>
         </div>
       </div>
 
@@ -177,6 +194,13 @@ export function Header({ cartCount, favoriteCount, currentRoute }: HeaderProps) 
                 <span className="font-medium">{c.name}</span>
               </a>
             ))}
+            <a
+              href={buildHref({ name: "news" })}
+              onClick={() => setShowCats(false)}
+              className="col-span-2 flex items-center gap-2 rounded-xl border border-brand bg-brand-light px-3 py-2.5 text-sm font-semibold text-brand"
+            >
+              <span className="text-xl">📰</span> Новости
+            </a>
           </div>
         </div>
       )}
@@ -255,6 +279,33 @@ function SearchIcon() {
     <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
       <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="2" />
       <path d="M14 14l4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+function NewsIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <rect
+        x="3.5"
+        y="4.5"
+        width="14"
+        height="15"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M17.5 8h2a1 1 0 011 1v8.5a2 2 0 01-2 2"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <path
+        d="M6.5 9h8M6.5 12h8M6.5 15h5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }

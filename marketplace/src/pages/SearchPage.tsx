@@ -1,9 +1,9 @@
-import { searchProducts } from "../data/products";
+import { useSearchProducts } from "../lib/catalog";
 import { ProductGrid } from "../components/ProductGrid";
 import type { ShopCtx } from "../App";
 
 export function SearchPage({ q, ctx }: { q: string; ctx: ShopCtx }) {
-  const results = searchProducts(q);
+  const results = useSearchProducts(q);
   return (
     <div className="mx-auto max-w-[1320px] px-3 py-4 md:px-4 md:py-6">
       <h1 className="mb-1 text-[20px] font-extrabold md:text-[24px]">

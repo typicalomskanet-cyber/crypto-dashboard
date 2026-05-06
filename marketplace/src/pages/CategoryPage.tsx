@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
-import { CATEGORY_BY_ID, CATEGORIES } from "../data/categories";
-import { productsByCategory } from "../data/products";
+import { useCategories, useProductsByCategory } from "../lib/catalog";
 import { ProductGrid } from "../components/ProductGrid";
 import { buildHref, type ShopCtx } from "../App";
 
 type Sort = "popular" | "price-asc" | "price-desc" | "rating" | "discount";
 
 export function CategoryPage({ id, ctx }: { id: string; ctx: ShopCtx }) {
-  const cat = CATEGORY_BY_ID.get(id);
+  const CATEGORIES = useCategories();
+  const cat = CATEGORIES.find(c => c.id === id);
+  const inCategory = useProductsByCategory(id);
   const [sort, setSort] = useState<Sort>("popular");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
@@ -15,7 +16,7 @@ export function CategoryPage({ id, ctx }: { id: string; ctx: ShopCtx }) {
   const [onlyDiscount, setOnlyDiscount] = useState(false);
 
   const products = useMemo(() => {
-    let list = productsByCategory(id);
+    let list = inCategory;
 
     const min = parseInt(minPrice, 10);
     const max = parseInt(maxPrice, 10);
@@ -41,7 +42,7 @@ export function CategoryPage({ id, ctx }: { id: string; ctx: ShopCtx }) {
         list = list.slice().sort((a, b) => b.reviewCount - a.reviewCount);
     }
     return list;
-  }, [id, sort, minPrice, maxPrice, minRating, onlyDiscount]);
+  }, [inCategory, sort, minPrice, maxPrice, minRating, onlyDiscount]);
 
   if (!cat) {
     return <div className="mx-auto max-w-[1320px] p-6">Категория не найдена</div>;

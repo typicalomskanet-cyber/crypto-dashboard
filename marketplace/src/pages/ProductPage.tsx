@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
-import { PRODUCTS, PRODUCT_BY_ID, productsByCategory } from "../data/products";
-import { CATEGORY_BY_ID } from "../data/categories";
+import { useCatalog, useCategories, useProducts, useProductsByCategory } from "../lib/catalog";
 import { discountPct, formatPrice } from "../lib/format";
 import { buildHref, type ShopCtx } from "../App";
 import { ProductGrid } from "../components/ProductGrid";
@@ -14,14 +13,18 @@ const PARTNER_LABEL: Record<string, string> = {
 };
 
 export function ProductPage({ id, ctx }: { id: string; ctx: ShopCtx }) {
-  const p = PRODUCT_BY_ID.get(id);
+  const PRODUCTS = useProducts();
+  const CATEGORIES = useCategories();
+  const { trackClick } = useCatalog();
+  const p = PRODUCTS.find(x => x.id === id);
+  const inCategory = useProductsByCategory(p?.categoryId ?? "");
   const [imgIdx, setImgIdx] = useState(0);
 
   const related = useMemo(
     () => p
-      ? productsByCategory(p.categoryId).filter(r => r.id !== p.id).slice(0, 10)
+      ? inCategory.filter(r => r.id !== p.id).slice(0, 10)
       : PRODUCTS.slice(0, 10),
-    [p],
+    [p, inCategory, PRODUCTS],
   );
 
   if (!p) {
@@ -39,7 +42,7 @@ export function ProductPage({ id, ctx }: { id: string; ctx: ShopCtx }) {
     );
   }
 
-  const cat = CATEGORY_BY_ID.get(p.categoryId);
+  const cat = CATEGORIES.find(c => c.id === p.categoryId);
   const off = discountPct(p.price, p.oldPrice);
   const fav = ctx.isFavorite(p.id);
 
@@ -135,6 +138,7 @@ export function ProductPage({ id, ctx }: { id: string; ctx: ShopCtx }) {
               href={p.partnerUrl}
               target="_blank"
               rel="noopener noreferrer sponsored"
+              onClick={() => trackClick(p.id)}
               className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-accent text-base font-bold text-ink transition hover:bg-accent-dark"
             >
               {PARTNER_LABEL[p.partner] ?? "Купить"}
@@ -213,6 +217,7 @@ export function ProductPage({ id, ctx }: { id: string; ctx: ShopCtx }) {
             href={p.partnerUrl}
             target="_blank"
             rel="noopener noreferrer sponsored"
+            onClick={() => trackClick(p.id)}
             className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-accent text-sm font-bold text-ink"
           >
             {PARTNER_LABEL[p.partner] ?? "Купить"}

@@ -7,6 +7,9 @@ import { ProductPage } from "./pages/ProductPage";
 import { CartPage } from "./pages/CartPage";
 import { FavoritesPage } from "./pages/FavoritesPage";
 import { SearchPage } from "./pages/SearchPage";
+import { NewsListPage } from "./pages/NewsListPage";
+import { NewsArticlePage } from "./pages/NewsArticlePage";
+import { AdminApp } from "./admin/AdminApp";
 import { useLocalState } from "./lib/storage";
 
 /** A simple hash-based route shape; keeps SPA & PWA-static-host friendly. */
@@ -16,7 +19,10 @@ export type Route =
   | { name: "product"; id: string }
   | { name: "search"; q: string }
   | { name: "cart" }
-  | { name: "favorites" };
+  | { name: "favorites" }
+  | { name: "news" }
+  | { name: "newsArticle"; slug: string }
+  | { name: "admin"; tab?: string };
 
 function parseHash(hash: string): Route {
   const h = hash.replace(/^#/, "");
@@ -29,6 +35,12 @@ function parseHash(hash: string): Route {
   }
   if (parts[0] === "cart") return { name: "cart" };
   if (parts[0] === "favorites") return { name: "favorites" };
+  if (parts[0] === "news") {
+    return parts[1]
+      ? { name: "newsArticle", slug: decodeURIComponent(parts[1]) }
+      : { name: "news" };
+  }
+  if (parts[0] === "admin") return { name: "admin", tab: parts[1] };
   return { name: "home" };
 }
 
@@ -40,6 +52,9 @@ export function buildHref(r: Route): string {
     case "search": return `#/search/${encodeURIComponent(r.q)}`;
     case "cart": return "#/cart";
     case "favorites": return "#/favorites";
+    case "news": return "#/news";
+    case "newsArticle": return `#/news/${encodeURIComponent(r.slug)}`;
+    case "admin": return r.tab ? `#/admin/${r.tab}` : "#/admin";
   }
 }
 
@@ -104,6 +119,12 @@ export function App() {
     },
   };
 
+  // Admin owns its own chrome (header/sidebar) — render the storefront chrome
+  // only on customer-facing routes.
+  if (route.name === "admin") {
+    return <AdminApp tab={route.tab} />;
+  }
+
   return (
     <div className="flex min-h-full flex-col">
       <Header
@@ -119,6 +140,8 @@ export function App() {
         {route.name === "search" && <SearchPage q={route.q} ctx={ctx} />}
         {route.name === "cart" && <CartPage ctx={ctx} />}
         {route.name === "favorites" && <FavoritesPage ctx={ctx} />}
+        {route.name === "news" && <NewsListPage />}
+        {route.name === "newsArticle" && <NewsArticlePage slug={route.slug} />}
       </main>
 
       <Footer />

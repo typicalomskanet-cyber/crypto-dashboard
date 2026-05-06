@@ -1,12 +1,14 @@
-import { CATEGORIES } from "../data/categories";
+import { useCategories, useCatalog } from "../lib/catalog";
 import { buildHref } from "../App";
 
 export function Footer() {
+  const CATEGORIES = useCategories();
+  const { settings } = useCatalog();
   return (
     <footer className="mt-16 border-t border-line bg-white">
       <div className="mx-auto grid max-w-[1320px] grid-cols-1 gap-8 px-4 py-10 md:grid-cols-4">
         <div>
-          <div className="mb-3 text-[15px] font-extrabold text-ink">Yantach Shop</div>
+          <div className="mb-3 text-[15px] font-extrabold text-ink">{settings.siteName}</div>
           <p className="text-[13px] leading-relaxed text-ink-2">
             Каталог товаров с переходом к покупке у проверенных партнёров —
             Яндекс.Маркет, Ozon, Wildberries и др. Цены актуальны на момент
@@ -37,10 +39,23 @@ export function Footer() {
             Покупателям
           </div>
           <ul className="space-y-2 text-[14px]">
+            <li>
+              <a href={buildHref({ name: "news" })} className="hover:text-brand">
+                📰 Новости
+              </a>
+            </li>
+            <li>
+              <a href={buildHref({ name: "favorites" })} className="hover:text-brand">
+                Избранное
+              </a>
+            </li>
+            <li>
+              <a href={buildHref({ name: "cart" })} className="hover:text-brand">
+                Корзина
+              </a>
+            </li>
             <li>Доставка и оплата</li>
             <li>Гарантия и возврат</li>
-            <li>Программа лояльности</li>
-            <li>Бонусы и скидки</li>
           </ul>
         </div>
 
@@ -49,17 +64,21 @@ export function Footer() {
             О компании
           </div>
           <ul className="space-y-2 text-[14px]">
-            <li>О Yantach Shop</li>
+            <li>О {settings.siteName}</li>
             <li>Партнёрская программа</li>
+            <li>
+              <a href="#/admin" className="hover:text-brand">
+                Админ-панель
+              </a>
+            </li>
             <li>Контакты</li>
-            <li>Договор-оферта</li>
           </ul>
         </div>
       </div>
 
       <div className="border-t border-line">
         <div className="mx-auto flex max-w-[1320px] flex-col items-start justify-between gap-2 px-4 py-4 text-[12px] text-ink-2 sm:flex-row sm:items-center">
-          <div>© {new Date().getFullYear()} Yantach Shop · Все права защищены</div>
+          <div>© {new Date().getFullYear()} {settings.siteName} · Все права защищены</div>
           <div>
             При переходе к покупке вы попадаете на сайт партнёра. Условия покупки
             определяются партнёром.

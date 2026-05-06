@@ -1,4 +1,5 @@
 import type { Product } from "../data/types";
+import { useCatalog } from "../lib/catalog";
 import { discountPct, formatPrice } from "../lib/format";
 import { buildHref } from "../App";
 
@@ -22,6 +23,7 @@ const PARTNER_LABEL: Record<Product["partner"], string> = {
 
 export function ProductCard(props: Props) {
   const { product: p, isFavorite, onToggleFavorite, onAddToCart, showPartnerButton } = props;
+  const { trackClick } = useCatalog();
   const off = discountPct(p.price, p.oldPrice);
 
   return (
@@ -105,6 +107,7 @@ export function ProductCard(props: Props) {
               href={p.partnerUrl}
               target="_blank"
               rel="noopener noreferrer sponsored"
+              onClick={() => trackClick(p.id)}
               className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-accent text-[13px] font-semibold text-ink transition hover:bg-accent-dark"
             >
               {PARTNER_LABEL[p.partner]}

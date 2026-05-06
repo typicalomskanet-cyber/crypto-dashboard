@@ -1,10 +1,11 @@
-import { PRODUCT_BY_ID } from "../data/products";
+import { useCatalog } from "../lib/catalog";
 import { formatPrice } from "../lib/format";
 import { buildHref, type ShopCtx } from "../App";
 
 export function CartPage({ ctx }: { ctx: ShopCtx }) {
+  const { productById } = useCatalog();
   const items = ctx.cart
-    .map(c => ({ c, p: PRODUCT_BY_ID.get(c.productId) }))
+    .map(c => ({ c, p: productById.get(c.productId) }))
     .filter((row): row is { c: typeof row.c; p: NonNullable<typeof row.p> } => !!row.p);
 
   const total = items.reduce((sum, { c, p }) => sum + c.qty * p.price, 0);
