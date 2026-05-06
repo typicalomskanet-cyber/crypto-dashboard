@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #0050e0;
+  --color-brand-dark: #003eb3;
+  --color-brand-light: #e6efff;
+  --color-accent: #ffd400;
+  --color-accent-dark: #f5b800;
+  --color-discount: #ff3a3a;
+  --color-paper: #f7f8fa;
+  --color-ink: #100d24;
+  --color-ink-2: #6a6f80;
+  --color-line: #e3e6ee;
+}
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: "Inter", "Segoe UI", "SF Pro Text", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    margin: 0;
+    overscroll-behavior-y: none;
+  }
+  * { box-sizing: border-box; }
+  button { font-family: inherit; }
+  a { color: inherit; text-decoration: none; }
+  img { display: block; max-width: 100%; }
+}
+
+/* Hide scrollbar on horizontal carousels but keep wheel/touch scroll */
+.scroll-x {
+  scrollbar-width: none;
+}
+.scroll-x::-webkit-scrollbar { display: none; }
+
+/* Reusable shimmer skeleton */
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #eef0f5 0%, #f7f8fa 50%, #eef0f5 100%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+
+/* Generic line-clamp helpers */
+.clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
