@@ -85,6 +85,51 @@ export const ITEMS: ItemDef[] = [
   E("amu_glyph", "Glyph Pendant", "🔮", "amulet", "uncommon", { mp: 12, def: 2 }, 100),
   E("amu_drake", "Drake-tooth Amulet", "🦷", "amulet", "rare", { hp: 30, atk: 4 }, 290),
   E("amu_shadow", "Shadow Heart", "🖤", "amulet", "epic", { hp: 40, crit: 6, mp: 20 }, 800),
+
+  // === CONSUMABLES ===
+  // HP / MP potions (Diablo-style) — used via hotkeys 5/6
+  {
+    id: "pot_heal_minor", name: "Minor Heal Potion", icon: "🧴",
+    rarity: "common", price: 30, consumable: "hp_potion", amount: 60, cooldown: 6,
+  },
+  {
+    id: "pot_heal_major", name: "Major Heal Potion", icon: "💉",
+    rarity: "uncommon", price: 90, consumable: "hp_potion", amount: 160, cooldown: 8,
+  },
+  {
+    id: "pot_mana_minor", name: "Minor Mana Potion", icon: "💧",
+    rarity: "common", price: 28, consumable: "mp_potion", amount: 40, cooldown: 6,
+  },
+  {
+    id: "pot_mana_major", name: "Major Mana Potion", icon: "🔵",
+    rarity: "uncommon", price: 80, consumable: "mp_potion", amount: 100, cooldown: 8,
+  },
+  // Soulshots / Spirit Shots (Lineage 2-style) — toggle on, deplete per attack
+  {
+    id: "soulshot", name: "Soulshot", icon: "🔥",
+    rarity: "common", price: 5, consumable: "soulshot", amount: 50, // +50% atk dmg
+  },
+  {
+    id: "spirit_shot", name: "Spirit Shot", icon: "💎",
+    rarity: "common", price: 7, consumable: "spirit_shot", amount: 50, // +50% spell dmg
+  },
+  {
+    id: "soulshot_grade_b", name: "Blessed Soulshot", icon: "🌋",
+    rarity: "uncommon", price: 15, consumable: "soulshot", amount: 100,
+  },
+  {
+    id: "spirit_shot_grade_b", name: "Blessed Spirit Shot", icon: "✨",
+    rarity: "uncommon", price: 20, consumable: "spirit_shot", amount: 100,
+  },
+  // Enchant scrolls — used in the Forge Enchant tab
+  {
+    id: "scroll_enchant_weapon", name: "Scroll of Enchant Weapon", icon: "📜",
+    rarity: "rare", price: 250,
+  },
+  {
+    id: "scroll_enchant_armor", name: "Scroll of Enchant Armor", icon: "📃",
+    rarity: "rare", price: 200,
+  },
 ];
 
 export const ITEM_BY_ID = new Map(ITEMS.map(i => [i.id, i]));

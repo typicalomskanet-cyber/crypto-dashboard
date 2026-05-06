@@ -37,6 +37,8 @@ export interface WorldProps {
   zoom?: number;
   /** Notify parent when zoom changes via wheel/pinch. */
   onZoomChange?: (z: number) => void;
+  /** Periodic player world-position update for mini-map. */
+  onPlayerPos?: (pos: [number, number]) => void;
 }
 
 export default function World(props: WorldProps) {
@@ -47,11 +49,90 @@ export default function World(props: WorldProps) {
       camera={{ position: [0, 6, 9], fov: 48 }}
       gl={{ antialias: true, powerPreference: "high-performance" }}
     >
-      <color attach="background" args={["#070a1a"]} />
-      <fog attach="fog" args={["#070a1a", 22, 55]} />
-      <ambientLight intensity={0.55} color="#9aa8ff" />
-      <hemisphereLight args={["#5a78ff", "#101428", 0.55]} />
+      <DayNight />
+      <Suspense fallback={null}>
+        <Ground />
+        <Decor />
+        <CityFootprint city={props.city} placed />
+        <Scene {...props} />
+      </Suspense>
+    </Canvas>
+  );
+}
+
+/**
+ * Animated day-night cycle. Drives:
+ *  - directional light position (sun arc)
+ *  - directional light color/intensity (warm noon → cool dusk → moon blue)
+ *  - ambient and hemisphere intensities
+ *  - scene background + fog color
+ *
+ * Cycle period: ~3 minutes per full day (controlled by SPEED).
+ */
+function DayNight() {
+  const dirRef = useRef<THREE.DirectionalLight>(null);
+  const ambRef = useRef<THREE.AmbientLight>(null);
+  const hemiRef = useRef<THREE.HemisphereLight>(null);
+  const { scene } = useThree();
+  // Phase 0..1 — 0=midnight, 0.25=dawn, 0.5=noon, 0.75=dusk
+  const phaseRef = useRef(0.45); // start mid-morning
+  const SPEED = 1 / 180; // 1/180 → 180 sec per cycle
+  // Reusable colors
+  const noonSun = useMemo(() => new THREE.Color("#fff5d8"), []);
+  const duskSun = useMemo(() => new THREE.Color("#ff8a4a"), []);
+  const moon = useMemo(() => new THREE.Color("#5a78ff"), []);
+  const noonBg = useMemo(() => new THREE.Color("#0c1633"), []);
+  const nightBg = useMemo(() => new THREE.Color("#040616"), []);
+  const duskBg = useMemo(() => new THREE.Color("#1a1024"), []);
+  useFrame((_, dt) => {
+    phaseRef.current = (phaseRef.current + dt * SPEED) % 1;
+    const p = phaseRef.current;
+    // angle along sun arc (radians)
+    const a = (p - 0.25) * Math.PI * 2; // 0 at sunrise, π at sunset
+    const sx = Math.cos(a) * 18;
+    const sy = Math.sin(a) * 22;
+    const sz = 6 + Math.sin(a * 0.5) * 4;
+    if (dirRef.current) {
+      dirRef.current.position.set(sx, Math.max(2, sy), sz);
+      // intensity falls below horizon
+      const dayFactor = Math.max(0, Math.sin(a)); // 0 at night, 1 at noon
+      dirRef.current.intensity = 0.05 + dayFactor * 1.85;
+      // color: dusk warm at low angle, near-white at high
+      const c = duskSun.clone().lerp(noonSun, dayFactor);
+      // Mix moon blue when very dark
+      if (dayFactor < 0.15) {
+        c.lerp(moon, 1 - dayFactor / 0.15);
+      }
+      dirRef.current.color.copy(c);
+    }
+    if (ambRef.current) {
+      const dayFactor = Math.max(0, Math.sin(a));
+      ambRef.current.intensity = 0.25 + dayFactor * 0.4;
+      ambRef.current.color
+        .copy(moon)
+        .lerp(new THREE.Color("#dde6ff"), dayFactor);
+    }
+    if (hemiRef.current) {
+      hemiRef.current.intensity = 0.35 + Math.max(0, Math.sin(a)) * 0.45;
+    }
+    // Background + fog
+    const dayFactor = Math.max(0, Math.sin(a));
+    const duskFactor = Math.max(0, 1 - Math.abs(p - 0.75) * 8); // peak at p=0.75
+    const bg =
+      dayFactor > 0.05
+        ? nightBg.clone().lerp(noonBg, dayFactor)
+        : duskFactor > 0.1
+        ? nightBg.clone().lerp(duskBg, duskFactor)
+        : nightBg.clone();
+    scene.background = bg;
+    if (scene.fog instanceof THREE.Fog) scene.fog.color.copy(bg);
+  });
+  return (
+    <>
+      <ambientLight ref={ambRef} intensity={0.55} color="#9aa8ff" />
+      <hemisphereLight ref={hemiRef} args={["#5a78ff", "#101428", 0.55]} />
       <directionalLight
+        ref={dirRef}
         position={[14, 18, 6]}
         intensity={1.6}
         color="#fff5d8"
@@ -63,13 +144,8 @@ export default function World(props: WorldProps) {
         shadow-camera-top={30}
         shadow-camera-bottom={-30}
       />
-      <Suspense fallback={null}>
-        <Ground />
-        <Decor />
-        <CityFootprint city={props.city} placed />
-        <Scene {...props} />
-      </Suspense>
-    </Canvas>
+      <fog attach="fog" args={["#070a1a", 22, 55]} />
+    </>
   );
 }
 
@@ -183,6 +259,11 @@ function Scene(props: WorldProps) {
   const [walking, setWalking] = useState(false);
   const [attackKey, setAttackKey] = useState(0);
   const [mobAttackKeys, setMobAttackKeys] = useState<Record<string, number>>({});
+  const posTickRef = useRef(0);
+  /** Diablo-style click-to-move target. Cleared when reached or new input. */
+  const moveTargetRef = useRef<THREE.Vector3 | null>(null);
+  /** When set, walk toward this mob and auto-attack on arrival. */
+  const chaseMobRef = useRef<string | null>(null);
 
   // Zoom state — controlled by parent or local fallback.
   const zoomRef = useRef(props.zoom ?? 0.5);
@@ -239,13 +320,31 @@ function Scene(props: WorldProps) {
     const mag = Math.hypot(dx, dz);
     const mode: CameraMode = props.cameraMode ?? "thirdPerson";
 
+    // === Diablo-style click-to-move (chase mob if set, else walk to point) ===
+    // Joystick/WASD takes priority and clears any pending target.
     if (mag > 0.1) {
-      // Move in camera-aligned frame.
+      moveTargetRef.current = null;
+      chaseMobRef.current = null;
+    } else if (chaseMobRef.current) {
+      const mob = props.mobs.find(x => x.uid === chaseMobRef.current);
+      if (mob && !mob.deadUntil) {
+        moveTargetRef.current = new THREE.Vector3(mob.pos[0], 0, mob.pos[2]);
+      } else {
+        chaseMobRef.current = null;
+        moveTargetRef.current = null;
+      }
+    }
+
+    if (mag > 0.1) {
+      // Joystick/WASD: move in camera-aligned frame.
       let camDir: THREE.Vector3;
       if (mode === "topDown") {
-        // In top-down, camera looks straight down — use world axes directly so
-        // joystick/WASD feel intuitive (W = up on screen = -Z).
-        camDir = new THREE.Vector3(0, 0, -1);
+        // Use camera projection on XZ so isometric W goes "up the screen".
+        camDir = new THREE.Vector3();
+        camera.getWorldDirection(camDir);
+        camDir.y = 0;
+        if (camDir.lengthSq() < 1e-6) camDir.set(0, 0, -1);
+        camDir.normalize();
       } else {
         camDir = new THREE.Vector3();
         camera.getWorldDirection(camDir);
@@ -267,22 +366,72 @@ function Scene(props: WorldProps) {
       while (delta < -Math.PI) delta += Math.PI * 2;
       p.rotation.y += delta * Math.min(1, dt * 12);
       setWalking(true);
+    } else if (moveTargetRef.current) {
+      // Click-to-move: walk along a straight line to the target.
+      const t = moveTargetRef.current;
+      const dxw = t.x - p.position.x;
+      const dzw = t.z - p.position.z;
+      const dist = Math.hypot(dxw, dzw);
+      // Stop within attack range when chasing a mob, else within 0.25.
+      const stopAt = chaseMobRef.current ? 1.8 : 0.25;
+      if (dist < stopAt) {
+        moveTargetRef.current = null;
+        setWalking(false);
+      } else {
+        const nx = dxw / dist;
+        const nz = dzw / dist;
+        const step = Math.min(dist - stopAt * 0.95, speed * dt);
+        p.position.x = THREE.MathUtils.clamp(
+          p.position.x + nx * step,
+          -WORLD_HALF + 1,
+          WORLD_HALF - 1,
+        );
+        p.position.z = THREE.MathUtils.clamp(
+          p.position.z + nz * step,
+          -WORLD_HALF + 1,
+          WORLD_HALF - 1,
+        );
+        const targetRot = Math.atan2(nx, nz);
+        const cur = p.rotation.y;
+        let delta = targetRot - cur;
+        while (delta > Math.PI) delta -= Math.PI * 2;
+        while (delta < -Math.PI) delta += Math.PI * 2;
+        p.rotation.y += delta * Math.min(1, dt * 12);
+        setWalking(true);
+      }
     } else {
       setWalking(false);
     }
 
     // Persist to player.pos so the parent state can survive reloads.
     props.player.pos = [p.position.x, 0, p.position.z];
+    // Throttled minimap notification (every ~0.25s)
+    posTickRef.current += dt;
+    if (posTickRef.current > 0.25) {
+      posTickRef.current = 0;
+      props.onPlayerPos?.([p.position.x, p.position.z]);
+    }
 
     // --- Camera --------------------------------------------------------------
     const z = zoomRef.current; // 0..1
     let off: THREE.Vector3;
     let lookAtY = 1.4;
     if (mode === "topDown") {
-      // High orbit-like view straight down. zoom maps height 8..36.
-      const height = THREE.MathUtils.lerp(8, 36, z);
-      off = new THREE.Vector3(0, height, 0.01);
-      lookAtY = 0;
+      // Diablo-style isometric: angled (~50°) view, fixed yaw (camera does not
+      // rotate with the player). Distance scales smoothly with zoom.
+      const dist = THREE.MathUtils.lerp(10, 22, z);
+      // 50° pitch ⇒ height = dist*sin(50°), horizontal = dist*cos(50°)
+      const pitch = THREE.MathUtils.degToRad(50);
+      const horiz = dist * Math.cos(pitch);
+      const height = dist * Math.sin(pitch);
+      // Fixed yaw 35° gives the classic isometric look (looking south-east).
+      const yaw = THREE.MathUtils.degToRad(35);
+      off = new THREE.Vector3(
+        Math.sin(yaw) * horiz,
+        height,
+        Math.cos(yaw) * horiz,
+      );
+      lookAtY = 0.6;
     } else {
       // Third-person follow behind player; zoom maps distance 4..16.
       const dist = THREE.MathUtils.lerp(4, 16, z);
@@ -355,17 +504,27 @@ function Scene(props: WorldProps) {
             selected={m.uid === props.selectedMob}
             walking={m.aggro}
             attackKey={mobAttackKeys[m.uid]}
-            onPick={() => props.onSelectMob(m.uid)}
+            onPick={() => {
+              props.onSelectMob(m.uid);
+              chaseMobRef.current = m.uid;
+              // Set initial target now so the player turns immediately.
+              moveTargetRef.current = new THREE.Vector3(m.pos[0], 0, m.pos[2]);
+            }}
           />
         );
       })}
 
-      {/* Click on empty ground = deselect */}
+      {/* Click on empty ground = walk there (Diablo-style) + deselect mob.
+          Invisible plane raycasts to world coords. */}
       <mesh
         rotation-x={-Math.PI / 2}
-        position={[0, 0, 0]}
-        visible={false}
-        onPointerDown={() => props.onSelectMob(null)}
+        position={[0, 0.001, 0]}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          props.onSelectMob(null);
+          chaseMobRef.current = null;
+          moveTargetRef.current = new THREE.Vector3(e.point.x, 0, e.point.z);
+        }}
       >
         <planeGeometry args={[WORLD_HALF * 2, WORLD_HALF * 2]} />
         <meshBasicMaterial transparent opacity={0} />

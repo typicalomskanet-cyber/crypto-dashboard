@@ -177,6 +177,139 @@ button { font-family: inherit; }
 .hud-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
 .cls-pick { font-family: inherit; }
 
+/* Mini-map (top-left, below HP bars) */
+.minimap {
+  position: absolute;
+  top: 130px; left: 12px;
+  z-index: 11;
+  pointer-events: none;
+}
+.minimap canvas {
+  display: block;
+  border-radius: 50%;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 0 2px rgba(255,216,100,0.18);
+}
+.minimap-coords {
+  position: absolute;
+  bottom: -2px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(8,10,24,0.85);
+  color: #ffd864;
+  font: 10px ui-monospace, monospace;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid #2a2d4a;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .minimap canvas { width: 110px !important; height: 110px !important; }
+}
+
+/* Soulshot / Spirit Shot toggle (top-left, below minimap) */
+.hud-shots {
+  position: absolute;
+  top: 300px; left: 12px;
+  z-index: 11;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.hud-shots button {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px;
+  background: rgba(8,10,24,0.85);
+  color: #d8dcf2;
+  border: 1px solid #2a2d4a;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: 11px ui-monospace, monospace;
+  cursor: pointer;
+  width: 145px;
+  transition: all .15s;
+}
+.hud-shots button:hover { border-color: #ffd864; }
+.hud-shots .shot-on {
+  background: rgba(160,96,255,0.25);
+  border-color: #a060ff;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(160,96,255,0.55);
+}
+.hud-shots small { color: #ffd864; font-weight: 700; }
+@media (max-width: 640px) {
+  .hud-shots { top: 230px; }
+  .hud-shots button { width: 110px; padding: 4px 6px; font-size: 10px; }
+}
+
+/* Vendor & Enchant panels */
+.vendor-panel, .enchant-panel { max-width: 720px; }
+.vendor-tabs { display: flex; gap: 4px; padding: 0 8px 8px; }
+.vendor-tabs button {
+  background: rgba(20,24,48,0.95);
+  color: #a4a8b8;
+  border: 1px solid #2a2d4a;
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.vendor-tabs .tab-active {
+  background: rgba(160,96,255,0.25);
+  color: #fff;
+  border-color: #a060ff;
+}
+.vendor-list { list-style: none; padding: 0 8px; margin: 0; max-height: 60vh; overflow-y: auto; }
+.vendor-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid #2a2d4a;
+  border-left-width: 3px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  background: rgba(20,24,48,0.7);
+}
+.vendor-icon { font-size: 22px; }
+.vendor-name { flex: 1; font-weight: 600; }
+.vendor-qty { color: #a4a8b8; font: 12px ui-monospace, monospace; }
+.vendor-price { color: #ffd864; font: 13px ui-monospace, monospace; min-width: 70px; text-align: right; }
+.vendor-row button {
+  background: rgba(60,40,90,0.6);
+  color: #d8dcf2;
+  border: 1px solid #4a3d6a;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.vendor-row button:hover:not(:disabled) { border-color: #ffd864; }
+.vendor-row button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.enchant-list { list-style: none; padding: 0 8px; margin: 0; max-height: 60vh; overflow-y: auto; }
+.enchant-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #2a2d4a;
+  border-left-width: 3px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  background: rgba(20,24,48,0.7);
+}
+.ench-icon { font-size: 26px; }
+.ench-lvl { color: #ffd864; font-weight: 700; }
+.ench-chance { color: #54a8ff; font: 12px ui-monospace, monospace; }
+.ench-scroll { color: #a4a8b8; font: 12px ui-monospace, monospace; }
+.enchant-row button {
+  background: rgba(60,40,90,0.6);
+  color: #d8dcf2;
+  border: 1px solid #a060ff;
+  border-radius: 4px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.enchant-row button:hover:not(:disabled) {
+  background: rgba(160,96,255,0.4);
+  box-shadow: 0 0 12px rgba(160,96,255,0.5);
+}
+.enchant-row button:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* Skill bar (Diablo-style) — bottom centre, above .hud-actions */
 .skill-bar {
   position: absolute;

@@ -32,6 +32,12 @@ export interface ItemDef {
   material?: boolean;
   /** vendor sell price */
   price: number;
+  /** Consumable kind drives potion / soulshot logic. */
+  consumable?: "hp_potion" | "mp_potion" | "soulshot" | "spirit_shot";
+  /** Restore amount for hp/mp potion or +damage% for soulshot. */
+  amount?: number;
+  /** Cooldown for consumable in seconds (potions only). */
+  cooldown?: number;
 }
 
 export interface InventoryStack {
@@ -116,6 +122,15 @@ export interface Player {
   unlockedClasses: ClassId[];
   /** placed buildings on the city tile grid (only after lvl 10) */
   city: PlacedBuilding[];
+  /** Soulshot mode: when on, each attack consumes one shot of given type. */
+  soulshotEnabled?: boolean;
+  spiritShotEnabled?: boolean;
+  /** Quick-use slot for hotkey 5 — id of an HP/MP potion item. */
+  quickHp?: string;
+  /** Quick-use slot for hotkey 6 — id of an HP/MP potion item. */
+  quickMp?: string;
+  /** Map of equipped item id → enchant level (0..10). +N grants +N% atk/def. */
+  enchant?: Record<string, number>;
 }
 
 export interface PlacedBuilding {

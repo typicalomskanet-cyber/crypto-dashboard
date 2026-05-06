@@ -20,8 +20,16 @@ import { LOOTBOXES } from "./data/lootboxes";
 import { MOBS } from "./data/mobs";
 import { BUILDINGS } from "./data/buildings";
 import { Joystick } from "./ui/Joystick";
-import { InventoryPanel, CraftingPanel, LootboxPanel } from "./ui/Panels";
+import {
+  InventoryPanel,
+  CraftingPanel,
+  LootboxPanel,
+  VendorPanel,
+  EnchantPanel,
+  ENCHANT_CHANCE,
+} from "./ui/Panels";
 import { SkillBar } from "./ui/SkillBar";
+import { MiniMap } from "./ui/MiniMap";
 import { SKILLS_BY_CLASS, type SkillDef } from "./data/skills";
 import type { CameraMode, MobInstance } from "./three/World";
 
@@ -66,15 +74,23 @@ function buildPlayer(name: string, race: RaceId, cls: ClassId): Player {
   };
 }
 
-function applyEquipment(stats: PlayerStats, equipment: Equipment): PlayerStats {
+function applyEquipment(
+  stats: PlayerStats,
+  equipment: Equipment,
+  enchant?: Record<string, number>,
+): PlayerStats {
   const out = { ...stats };
-  for (const id of Object.values(equipment)) {
+  for (const [slot, id] of Object.entries(equipment)) {
     if (!id) continue;
     const it = ITEM_BY_ID.get(id);
     if (!it?.stats) continue;
-    out.atk += it.stats.atk ?? 0;
-    out.def += it.stats.def ?? 0;
-    out.hpMax += it.stats.hp ?? 0;
+    const lvl = enchant?.[id] ?? 0;
+    // +5% per enchant level. Weapon → atk; armor/helm/etc → def & hp.
+    const atkMul = slot === "weapon" ? 1 + lvl * 0.05 : 1;
+    const defHpMul = slot === "weapon" ? 1 : 1 + lvl * 0.05;
+    out.atk += Math.round((it.stats.atk ?? 0) * atkMul);
+    out.def += Math.round((it.stats.def ?? 0) * defHpMul);
+    out.hpMax += Math.round((it.stats.hp ?? 0) * defHpMul);
     out.mpMax += it.stats.mp ?? 0;
     out.crit += it.stats.crit ?? 0;
   }
@@ -113,7 +129,9 @@ export default function App() {
   const [mobs, setMobs] = useState<MobInstance[]>([]);
   const [selectedMob, setSelectedMob] = useState<string | null>(null);
   const [movementInput, setMovementInput] = useState<{ x: number; z: number }>({ x: 0, z: 0 });
-  const [overlay, setOverlay] = useState<"inventory" | "crafting" | "lootbox" | null>(null);
+  const [overlay, setOverlay] = useState<
+    "inventory" | "crafting" | "lootbox" | "vendor" | "enchant" | null
+  >(null);
   const [log, setLog] = useState<{ msg: string; ts: number }[]>([]);
   const [lastDrop, setLastDrop] = useState<ItemDef | null>(null);
   const [selectedBuildDef, setSelectedBuildDef] = useState<string | null>(null);
@@ -123,6 +141,8 @@ export default function App() {
   const [cooldowns, setCooldowns] = useState<Record<string, number>>({});
   /** Active buff (atk multiplier) from a Heroic Cry / Bloodlust style skill. */
   const [buff, setBuff] = useState<{ skillId: string; mul: number; until: number } | null>(null);
+  /** Player world position (x, z) — fed by World useFrame for the minimap. */
+  const [playerXZ, setPlayerXZ] = useState<[number, number]>([0, 0]);
 
   const pushLog = useCallback((msg: string) => {
     setLog(prev => [{ msg, ts: Date.now() }, ...prev].slice(0, 8));
@@ -163,7 +183,7 @@ export default function App() {
   const effectiveStats = useMemo(
     () => {
       if (!player) return null;
-      const base = applyEquipment(player.stats, player.equipment);
+      const base = applyEquipment(player.stats, player.equipment, player.enchant);
       if (buff && buff.until > Date.now()) {
         return { ...base, atk: Math.floor(base.atk * buff.mul) };
       }
@@ -275,7 +295,7 @@ export default function App() {
     const iv = setInterval(() => {
       setPlayer(p => {
         if (!p) return p;
-        const stats = applyEquipment(p.stats, p.equipment);
+        const stats = applyEquipment(p.stats, p.equipment, p.enchant);
         let dmg = 0;
         for (const m of mobs) {
           if (m.deadUntil) continue;
@@ -309,7 +329,7 @@ export default function App() {
     const iv = setInterval(() => {
       setPlayer(p => {
         if (!p) return p;
-        const stats = applyEquipment(p.stats, p.equipment);
+        const stats = applyEquipment(p.stats, p.equipment, p.enchant);
         return {
           ...p,
           stats: {
@@ -334,8 +354,41 @@ export default function App() {
         skillName?: string;
         drainHeal?: boolean;
       }>).detail;
-      const mul = detail.mul ?? 1.0;
-      const skillTag = detail.skillName ? ` [${detail.skillName}]` : "";
+      let mul = detail.mul ?? 1.0;
+      let skillTag = detail.skillName ? ` [${detail.skillName}]` : "";
+
+      // Soulshot / Spirit Shot consumption (Lineage 2-style).
+      // Picks first matching shot in inventory; if none, toggle implicitly off.
+      if (player.soulshotEnabled || player.spiritShotEnabled) {
+        const wantSpirit = (detail.skillName?.toLowerCase().includes("bolt")) || false;
+        const kind = wantSpirit && player.spiritShotEnabled
+          ? "spirit_shot"
+          : player.soulshotEnabled
+          ? "soulshot"
+          : null;
+        if (kind) {
+          const stack = player.inventory.find(s => {
+            const d = ITEMS.find(i => i.id === s.itemId);
+            return d?.consumable === kind;
+          });
+          if (stack) {
+            const d = ITEMS.find(i => i.id === stack.itemId);
+            const boost = (d?.amount ?? 50) / 100;
+            mul *= 1 + boost;
+            skillTag += ` [${d?.icon ?? "🔥"}]`;
+            // Consume one shot.
+            setPlayer(p => {
+              if (!p) return p;
+              const inv = p.inventory
+                .map(s =>
+                  s.itemId === stack.itemId ? { ...s, qty: s.qty - 1 } : s,
+                )
+                .filter(s => s.qty > 0);
+              return { ...p, inventory: inv };
+            });
+          }
+        }
+      }
       const damageOne = (_m: MobInstance, def: typeof MOBS[number]) => {
         const isCrit = Math.random() * 100 < effectiveStats.crit;
         const raw = Math.max(1, effectiveStats.atk - Math.floor(def.hp * 0.01));
@@ -383,7 +436,7 @@ export default function App() {
         if (detail.drainHeal && totalDmg > 0) {
           setPlayer(p => {
             if (!p) return p;
-            const stats = applyEquipment(p.stats, p.equipment);
+            const stats = applyEquipment(p.stats, p.equipment, p.enchant);
             const heal = Math.floor(totalDmg * 0.6);
             return {
               ...p,
@@ -420,7 +473,7 @@ export default function App() {
       if (skill.kind === "heal" && skill.heal) {
         setPlayer(p => {
           if (!p) return p;
-          const stats = applyEquipment(p.stats, p.equipment);
+          const stats = applyEquipment(p.stats, p.equipment, p.enchant);
           return {
             ...p,
             stats: { ...p.stats, hp: Math.min(stats.hpMax, p.stats.hp + skill.heal!) },
@@ -454,11 +507,65 @@ export default function App() {
     [player, cooldowns, selectedMob, pushLog],
   );
 
-  // === Hotkeys 1..4 cast skills, 5..6 reserved for potions later ===
+  // === Use HP / MP potion (hotkey 5 / 6) ===
+  const usePotion = useCallback(
+    (kind: "hp_potion" | "mp_potion") => {
+      if (!player) return;
+      const cdKey = kind === "hp_potion" ? "potion_hp" : "potion_mp";
+      const now = Date.now();
+      if ((cooldowns[cdKey] ?? 0) > now) return;
+      // Find first matching potion in inventory.
+      const stack = player.inventory.find(s => {
+        const def = ITEMS.find(i => i.id === s.itemId);
+        return def?.consumable === kind;
+      });
+      if (!stack) {
+        pushLog(`No ${kind === "hp_potion" ? "HP" : "MP"} potion to use.`);
+        return;
+      }
+      const def = ITEMS.find(i => i.id === stack.itemId);
+      if (!def?.amount) return;
+      // Apply.
+      setPlayer(p => {
+        if (!p) return p;
+        const stats = applyEquipment(p.stats, p.equipment, p.enchant);
+        const hp =
+          kind === "hp_potion"
+            ? Math.min(stats.hpMax, p.stats.hp + def.amount!)
+            : p.stats.hp;
+        const mp =
+          kind === "mp_potion"
+            ? Math.min(stats.mpMax, p.stats.mp + def.amount!)
+            : p.stats.mp;
+        const inv = p.inventory
+          .map(s =>
+            s.itemId === stack.itemId ? { ...s, qty: s.qty - 1 } : s,
+          )
+          .filter(s => s.qty > 0);
+        return { ...p, stats: { ...p.stats, hp, mp }, inventory: inv };
+      });
+      const cd = (def.cooldown ?? 6) * 1000;
+      setCooldowns(c => ({ ...c, [cdKey]: now + cd }));
+      pushLog(`${def.name} used (+${def.amount}).`);
+    },
+    [player, cooldowns, pushLog],
+  );
+
+  // === Hotkeys 1..4 cast skills, 5..6 use potions ===
   useEffect(() => {
     if (!player || screen !== "world") return;
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "5") {
+        e.preventDefault();
+        usePotion("hp_potion");
+        return;
+      }
+      if (e.key === "6") {
+        e.preventDefault();
+        usePotion("mp_potion");
+        return;
+      }
       const idx = "1234".indexOf(e.key);
       if (idx < 0) return;
       const skills = SKILLS_BY_CLASS[player.cls] ?? SKILLS_BY_CLASS.knight;
@@ -467,7 +574,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [player, screen, castSkill]);
+  }, [player, screen, castSkill, usePotion]);
 
   // === Tick cooldown UI every 200ms (just bumps state via buff timer expiry) ===
   useEffect(() => {
@@ -592,6 +699,70 @@ export default function App() {
       });
     },
     [cityBoosts.vendorBonus, pushLog],
+  );
+
+  const buyItem = useCallback(
+    (itemId: string, qty: number) => {
+      setPlayer(p => {
+        if (!p) return p;
+        const it = ITEM_BY_ID.get(itemId);
+        if (!it) return p;
+        const total = it.price * qty;
+        if (p.gold < total) {
+          pushLog(`Not enough gold for ${qty}× ${it.name}.`);
+          return p;
+        }
+        const inv = mergeInventory(p.inventory, [{ itemId, qty }]);
+        pushLog(`Bought ${qty}× ${it.icon} ${it.name} for ${total} gold.`);
+        return { ...p, inventory: inv, gold: p.gold - total };
+      });
+    },
+    [pushLog],
+  );
+
+  const enchantItem = useCallback(
+    (slot: Slot, scrollId: string) => {
+      setPlayer(p => {
+        if (!p) return p;
+        const eqId = p.equipment[slot];
+        if (!eqId) return p;
+        const eq = ITEM_BY_ID.get(eqId);
+        if (!eq) return p;
+        const have = p.inventory.find(s => s.itemId === scrollId);
+        if (!have || have.qty < 1) {
+          pushLog(`No enchant scroll available.`);
+          return p;
+        }
+        const lvl = (p.enchant?.[eqId] ?? 0);
+        if (lvl >= 10) {
+          pushLog(`${eq.name} is already at +10.`);
+          return p;
+        }
+        const chance = ENCHANT_CHANCE(lvl);
+        const success = Math.random() < chance;
+        const inv = consumeOne(p.inventory, scrollId);
+        if (success) {
+          pushLog(`✨ ${eq.name} enchanted to +${lvl + 1}!`);
+          return {
+            ...p,
+            inventory: inv,
+            enchant: { ...(p.enchant ?? {}), [eqId]: lvl + 1 },
+          };
+        }
+        // Failure: shatter the item.
+        pushLog(`💥 ${eq.name} shattered into dust.`);
+        const newEquipment = { ...p.equipment, [slot]: undefined };
+        const newEnchant = { ...(p.enchant ?? {}) };
+        delete newEnchant[eqId];
+        return {
+          ...p,
+          inventory: inv,
+          equipment: newEquipment,
+          enchant: newEnchant,
+        };
+      });
+    },
+    [pushLog],
   );
 
   const craftRecipe = useCallback(
@@ -785,6 +956,7 @@ export default function App() {
           cameraMode={cameraMode}
           zoom={zoom}
           onZoomChange={setZoom}
+          onPlayerPos={setPlayerXZ}
         />
       </Suspense>
 
@@ -825,6 +997,8 @@ export default function App() {
       <div className="hud-actions">
         <button onClick={() => setOverlay("inventory")}>🎒 Inventory</button>
         <button onClick={() => setOverlay("crafting")}>⚒️ Forge</button>
+        <button onClick={() => setOverlay("vendor")}>🧙 Vendor</button>
+        <button onClick={() => setOverlay("enchant")}>⚡ Enchant</button>
         <button onClick={() => setOverlay("lootbox")}>📦 Reliquaries</button>
         {player.level >= 10 ? (
           <button onClick={() => setScreen("city")}>🏰 Stronghold</button>
@@ -855,6 +1029,58 @@ export default function App() {
           <li key={l.ts + "-" + i}>{l.msg}</li>
         ))}
       </ul>
+
+      {/* Mini-map (top-left under HP bars) */}
+      <MiniMap
+        player={playerXZ}
+        mobs={mobs}
+        city={player.city}
+        selectedMob={selectedMob}
+      />
+
+      {/* Soulshot / Spirit Shot toggles (L2-style) */}
+      <div className="hud-shots">
+        <button
+          className={player.soulshotEnabled ? "shot-on" : ""}
+          onClick={() =>
+            setPlayer(p =>
+              p ? { ...p, soulshotEnabled: !p.soulshotEnabled } : p,
+            )
+          }
+          title="Consume Soulshots for +damage on attacks"
+        >
+          🔥 Soulshot {player.soulshotEnabled ? "ON" : "off"}
+          <small>
+            ×
+            {player.inventory
+              .filter(s => {
+                const d = ITEM_BY_ID.get(s.itemId);
+                return d?.consumable === "soulshot";
+              })
+              .reduce((a, b) => a + b.qty, 0)}
+          </small>
+        </button>
+        <button
+          className={player.spiritShotEnabled ? "shot-on" : ""}
+          onClick={() =>
+            setPlayer(p =>
+              p ? { ...p, spiritShotEnabled: !p.spiritShotEnabled } : p,
+            )
+          }
+          title="Consume Spirit Shots for +spell damage"
+        >
+          💎 Spirit {player.spiritShotEnabled ? "ON" : "off"}
+          <small>
+            ×
+            {player.inventory
+              .filter(s => {
+                const d = ITEM_BY_ID.get(s.itemId);
+                return d?.consumable === "spirit_shot";
+              })
+              .reduce((a, b) => a + b.qty, 0)}
+          </small>
+        </button>
+      </div>
 
       {/* Skill bar — Diablo-style 1..4 hotkeys */}
       <SkillBar
@@ -932,6 +1158,21 @@ export default function App() {
           player={player}
           lastDrop={lastDrop}
           onOpen={openLootbox}
+          onClose={() => setOverlay(null)}
+        />
+      )}
+      {overlay === "vendor" && (
+        <VendorPanel
+          player={player}
+          onBuy={buyItem}
+          onSell={sellItem}
+          onClose={() => setOverlay(null)}
+        />
+      )}
+      {overlay === "enchant" && (
+        <EnchantPanel
+          player={player}
+          onEnchant={enchantItem}
           onClose={() => setOverlay(null)}
         />
       )}
