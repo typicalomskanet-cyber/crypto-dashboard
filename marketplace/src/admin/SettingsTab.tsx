@@ -44,6 +44,36 @@ export function SettingsTab() {
           />
         </Field>
 
+        <div className="rounded-xl border border-line bg-paper p-4">
+          <h3 className="mb-3 text-[14px] font-bold">📁 Загрузка изображений на хостинг</h3>
+          <div className="space-y-3">
+            <Field
+              label="URL upload.php"
+              hint="endpoint на твоём хостинге, который принимает файл и возвращает URL"
+            >
+              <input
+                value={draft.uploadEndpoint}
+                onChange={e => setDraft({ ...draft, uploadEndpoint: e.target.value })}
+                className={inputCls}
+                placeholder="https://yourdomain.com/upload.php"
+              />
+            </Field>
+            <Field
+              label="Секретный токен"
+              hint="должен совпадать с UPLOAD_TOKEN в upload.php"
+            >
+              <input
+                value={draft.uploadToken}
+                onChange={e => setDraft({ ...draft, uploadToken: e.target.value })}
+                className={inputCls + " font-mono text-[12px]"}
+              />
+            </Field>
+            <p className="text-[11px] leading-relaxed text-ink-2">
+              Если оставить URL пустым — кнопка «Загрузить» в полях изображений просто не будет показываться (можно вводить только URL вручную).
+            </p>
+          </div>
+        </div>
+
         <div className="flex flex-wrap gap-2 pt-2">
           <button
             onClick={() => {
@@ -73,6 +103,8 @@ export function SettingsTab() {
                 siteName: "Yantach Shop",
                 defaultAffiliateUrl: "https://market.yandex.ru/cc/9NW947",
                 adminPassword: "admin",
+                uploadEndpoint: "http://a1262430.xsph.ru/upload.php",
+                uploadToken: "a764bd68c87dde34f8fccd239ca9d677",
               });
             }
           }}

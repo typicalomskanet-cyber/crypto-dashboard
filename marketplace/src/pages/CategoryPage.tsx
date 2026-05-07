@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useCategories, useProductsByCategory } from "../lib/catalog";
 import { ProductGrid } from "../components/ProductGrid";
 import { buildHref, type ShopCtx } from "../App";
@@ -14,6 +14,24 @@ export function CategoryPage({ id, ctx }: { id: string; ctx: ShopCtx }) {
   const [maxPrice, setMaxPrice] = useState("");
   const [minRating, setMinRating] = useState(0);
   const [onlyDiscount, setOnlyDiscount] = useState(false);
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
+
+  // Reset brand selection when navigating to a different category.
+  useEffect(() => setSelectedBrands([]), [id]);
+
+  function toggleBrand(brand: string) {
+    setSelectedBrands(prev =>
+      prev.includes(brand) ? prev.filter(b => b !== brand) : [...prev, brand],
+    );
+  }
+
+  const allBrands = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const p of inCategory) counts[p.brand] = (counts[p.brand] ?? 0) + 1;
+    return Object.entries(counts)
+      .map(([brand, count]) => ({ brand, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [inCategory]);
 
   const products = useMemo(() => {
     let list = inCategory;
@@ -24,6 +42,7 @@ export function CategoryPage({ id, ctx }: { id: string; ctx: ShopCtx }) {
     if (!Number.isNaN(max)) list = list.filter(p => p.price <= max);
     if (minRating > 0) list = list.filter(p => p.rating >= minRating);
     if (onlyDiscount) list = list.filter(p => !!p.oldPrice);
+    if (selectedBrands.length > 0) list = list.filter(p => selectedBrands.includes(p.brand));
 
     switch (sort) {
       case "price-asc":
@@ -42,7 +61,7 @@ export function CategoryPage({ id, ctx }: { id: string; ctx: ShopCtx }) {
         list = list.slice().sort((a, b) => b.reviewCount - a.reviewCount);
     }
     return list;
-  }, [inCategory, sort, minPrice, maxPrice, minRating, onlyDiscount]);
+  }, [inCategory, sort, minPrice, maxPrice, minRating, onlyDiscount, selectedBrands]);
 
   if (!cat) {
     return <div className="mx-auto max-w-[1320px] p-6">Категория не найдена</div>;
@@ -116,6 +135,34 @@ export function CategoryPage({ id, ctx }: { id: string; ctx: ShopCtx }) {
               Только со скидкой
             </label>
           </FilterBlock>
+
+          {allBrands.length > 1 && (
+            <FilterBlock label={`Бренд (${allBrands.length})`}>
+              <div className="max-h-56 space-y-1 overflow-auto pr-1">
+                {allBrands.map(({ brand, count }) => (
+                  <label key={brand} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selectedBrands.includes(brand)}
+                      onChange={() => toggleBrand(brand)}
+                      className="h-4 w-4 accent-brand"
+                    />
+                    <span className="flex-1 truncate">{brand}</span>
+                    <span className="text-[11px] text-ink-2">{count}</span>
+                  </label>
+                ))}
+              </div>
+              {selectedBrands.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedBrands([])}
+                  className="mt-1 text-[11px] text-brand hover:underline"
+                >
+                  Сбросить бренды
+                </button>
+              )}
+            </FilterBlock>
+          )}
 
           <FilterBlock label="Другие категории">
             <div className="flex flex-wrap gap-1.5">

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useCatalog } from "../lib/catalog";
 import type { Product } from "../data/types";
 import { Field, inputCls, textareaCls } from "./AdminApp";
+import { ImageInput } from "./ImageInput";
 import { formatPrice } from "../lib/format";
 
 const PARTNERS: Product["partner"][] = ["yandex", "ozon", "wildberries", "ali", "other"];
@@ -354,38 +355,25 @@ function ProductEditor({
           </div>
 
           <div className="md:col-span-2">
-            <Field label="Изображения" hint="ссылки на jpg/png/webp">
+            <Field label="Изображения" hint="загрузите файл или вставьте URL">
               <div className="space-y-2">
                 {draft.images.map((src, i) => (
-                  <div key={i} className="flex gap-2">
-                    <input
-                      value={src}
-                      onChange={e => {
-                        const next = draft.images.slice();
-                        next[i] = e.target.value;
-                        update("images", next);
-                      }}
-                      placeholder="https://..."
-                      className={inputCls}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = draft.images.filter((_, j) => j !== i);
-                        update("images", next.length > 0 ? next : [""]);
-                      }}
-                      className="shrink-0 rounded-lg bg-paper px-3 text-[12px] text-ink-2 hover:text-discount"
-                    >
-                      ✕
-                    </button>
-                  </div>
+                  <ImageInput
+                    key={i}
+                    value={src}
+                    onChange={url => {
+                      const next = draft.images.slice();
+                      next[i] = url;
+                      update("images", next);
+                    }}
+                  />
                 ))}
                 <button
                   type="button"
                   onClick={() => update("images", [...draft.images, ""])}
                   className="rounded-lg bg-paper px-3 py-1.5 text-[12px] text-ink-2 hover:text-brand"
                 >
-                  + Добавить URL
+                  + Добавить картинку
                 </button>
               </div>
             </Field>

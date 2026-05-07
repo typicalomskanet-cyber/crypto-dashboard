@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useCatalog } from "../lib/catalog";
 import type { NewsArticle } from "../data/news";
 import { Field, inputCls, textareaCls } from "./AdminApp";
+import { ImageInput } from "./ImageInput";
 import { formatDate } from "../lib/format";
 
 export function NewsTab() {
@@ -150,7 +151,7 @@ function Editor({
           <Field label="Дата"><input type="date" value={draft.date} onChange={e => setDraft({ ...draft, date: e.target.value })} className={inputCls} /></Field>
           <Field label="Тег (метка)"><input value={draft.tag ?? ""} onChange={e => setDraft({ ...draft, tag: e.target.value })} className={inputCls} placeholder="Скидки, Новинки, Гайд" /></Field>
           <div className="md:col-span-2">
-            <Field label="Обложка (URL)"><input value={draft.cover} onChange={e => setDraft({ ...draft, cover: e.target.value })} className={inputCls} placeholder="https://..." /></Field>
+            <Field label="Обложка"><ImageInput value={draft.cover} onChange={url => setDraft({ ...draft, cover: url })} placeholder="https://… или загрузите файл" /></Field>
           </div>
           <div className="md:col-span-2">
             <Field label="Превью (excerpt)" hint="1–2 предложения для списка">

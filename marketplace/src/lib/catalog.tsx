@@ -11,6 +11,7 @@ import { CATEGORIES as SEED_CATEGORIES } from "../data/categories";
 import { PRODUCTS as SEED_PRODUCTS, DEFAULT_AFFILIATE_URL } from "../data/products";
 import { DEFAULT_BANNERS, type Banner } from "../data/banners";
 import { DEFAULT_NEWS, type NewsArticle } from "../data/news";
+import { DEFAULT_PROMOS, type PromoCode } from "../data/promos";
 import type { Category, Product } from "../data/types";
 
 export interface SiteSettings {
@@ -18,12 +19,19 @@ export interface SiteSettings {
   defaultAffiliateUrl: string;
   /** Salted-hash-free admin gate; matches input verbatim. Local only. */
   adminPassword: string;
+  /** POST endpoint that accepts a multipart "file" upload and returns
+   *  `{ ok, url }`. Empty value disables the in-admin upload button. */
+  uploadEndpoint: string;
+  /** Secret token sent as X-Upload-Token header. Must match server-side. */
+  uploadToken: string;
 }
 
 const DEFAULT_SETTINGS: SiteSettings = {
   siteName: "Yantach Shop",
   defaultAffiliateUrl: DEFAULT_AFFILIATE_URL,
   adminPassword: "admin",
+  uploadEndpoint: "http://a1262430.xsph.ru/upload.php",
+  uploadToken: "a764bd68c87dde34f8fccd239ca9d677",
 };
 
 export interface CatalogState {
@@ -31,6 +39,7 @@ export interface CatalogState {
   categories: Category[];
   banners: Banner[];
   news: NewsArticle[];
+  promos: PromoCode[];
   settings: SiteSettings;
   /** Map productId → click count on the affiliate "Buy" button. */
   clicks: Record<string, number>;
@@ -54,6 +63,10 @@ interface CatalogActions {
   addNews(n: NewsArticle): void;
   updateNews(id: string, patch: Partial<NewsArticle>): void;
   removeNews(id: string): void;
+  // Promos
+  addPromo(p: PromoCode): void;
+  updatePromo(id: string, patch: Partial<PromoCode>): void;
+  removePromo(id: string): void;
   // Settings
   updateSettings(patch: Partial<SiteSettings>): void;
   // Analytics
@@ -83,6 +96,7 @@ function loadInitial(): CatalogState {
       categories: SEED_CATEGORIES,
       banners: DEFAULT_BANNERS,
       news: DEFAULT_NEWS,
+      promos: DEFAULT_PROMOS,
       settings: DEFAULT_SETTINGS,
       clicks: {},
     };
@@ -91,6 +105,7 @@ function loadInitial(): CatalogState {
   let categories = SEED_CATEGORIES;
   let banners = DEFAULT_BANNERS;
   let news = DEFAULT_NEWS;
+  let promos = DEFAULT_PROMOS;
   let settings = DEFAULT_SETTINGS;
 
   try {
@@ -101,6 +116,7 @@ function loadInitial(): CatalogState {
       if (Array.isArray(parsed.categories)) categories = parsed.categories as Category[];
       if (Array.isArray(parsed.banners)) banners = parsed.banners as Banner[];
       if (Array.isArray(parsed.news)) news = parsed.news as NewsArticle[];
+      if (Array.isArray(parsed.promos)) promos = parsed.promos as PromoCode[];
       if (parsed.settings) settings = { ...DEFAULT_SETTINGS, ...parsed.settings };
     }
   } catch {
@@ -113,7 +129,7 @@ function loadInitial(): CatalogState {
     if (raw) clicks = JSON.parse(raw) as Record<string, number>;
   } catch { /* ignore */ }
 
-  return { products, categories, banners, news, settings, clicks };
+  return { products, categories, banners, news, promos, settings, clicks };
 }
 
 function persist(state: CatalogState) {
@@ -125,6 +141,7 @@ function persist(state: CatalogState) {
         categories: state.categories,
         banners: state.banners,
         news: state.news,
+        promos: state.promos,
         settings: state.settings,
       }),
     );
@@ -213,6 +230,19 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     setState(s => ({ ...s, news: s.news.filter(n => n.id !== id) }));
   }, []);
 
+  const addPromo = useCallback((p: PromoCode) => {
+    setState(s => ({ ...s, promos: [p, ...s.promos] }));
+  }, []);
+  const updatePromo = useCallback((id: string, patch: Partial<PromoCode>) => {
+    setState(s => ({
+      ...s,
+      promos: s.promos.map(p => (p.id === id ? { ...p, ...patch } : p)),
+    }));
+  }, []);
+  const removePromo = useCallback((id: string) => {
+    setState(s => ({ ...s, promos: s.promos.filter(p => p.id !== id) }));
+  }, []);
+
   const updateSettings = useCallback((patch: Partial<SiteSettings>) => {
     setState(s => ({ ...s, settings: { ...s.settings, ...patch } }));
   }, []);
@@ -233,6 +263,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
         categories: state.categories,
         banners: state.banners,
         news: state.news,
+        promos: state.promos,
         settings: state.settings,
         clicks: state.clicks,
       },
@@ -248,6 +279,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
       const categories = Array.isArray(parsed.categories) ? (parsed.categories as Category[]) : null;
       const banners = Array.isArray(parsed.banners) ? (parsed.banners as Banner[]) : null;
       const news = Array.isArray(parsed.news) ? (parsed.news as NewsArticle[]) : null;
+      const promos = Array.isArray(parsed.promos) ? (parsed.promos as PromoCode[]) : null;
       if (!products || !categories) {
         return { ok: false, error: "В файле нет полей products или categories" };
       }
@@ -256,6 +288,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
         categories,
         banners: banners ?? s.banners,
         news: news ?? s.news,
+        promos: promos ?? s.promos,
         settings: parsed.settings ? { ...DEFAULT_SETTINGS, ...parsed.settings } : s.settings,
         clicks: parsed.clicks && typeof parsed.clicks === "object" ? (parsed.clicks as Record<string, number>) : s.clicks,
       }));
@@ -271,6 +304,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
       categories: SEED_CATEGORIES,
       banners: DEFAULT_BANNERS,
       news: DEFAULT_NEWS,
+      promos: DEFAULT_PROMOS,
       settings: DEFAULT_SETTINGS,
       clicks: {},
     });
@@ -300,6 +334,9 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     addNews,
     updateNews,
     removeNews,
+    addPromo,
+    updatePromo,
+    removePromo,
     updateSettings,
     trackClick,
     exportJson,

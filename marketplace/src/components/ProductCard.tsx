@@ -1,5 +1,6 @@
 import type { Product } from "../data/types";
 import { useCatalog } from "../lib/catalog";
+import { useCompare } from "../lib/preferences";
 import { discountPct, formatPrice } from "../lib/format";
 import { buildHref } from "../App";
 
@@ -24,6 +25,8 @@ const PARTNER_LABEL: Record<Product["partner"], string> = {
 export function ProductCard(props: Props) {
   const { product: p, isFavorite, onToggleFavorite, onAddToCart, showPartnerButton } = props;
   const { trackClick } = useCatalog();
+  const compare = useCompare();
+  const inCompare = compare.has(p.id);
   const off = discountPct(p.price, p.oldPrice);
 
   return (
@@ -33,6 +36,29 @@ export function ProductCard(props: Props) {
           −{off}%
         </span>
       )}
+
+      <button
+        type="button"
+        onClick={e => {
+          e.preventDefault();
+          compare.toggle(p.id);
+        }}
+        className={`absolute right-12 top-2 z-10 flex h-9 w-9 items-center justify-center rounded-full shadow-sm transition ${
+          inCompare ? "bg-brand text-white" : "bg-white/90 text-ink-2 hover:bg-white"
+        }`}
+        aria-label={inCompare ? "Убрать из сравнения" : "Добавить в сравнение"}
+        title={inCompare ? "В сравнении" : "В сравнение"}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M3 6h11M3 12h7M3 18h11M21 9l-3 3 3 3M15 12h6"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
 
       <button
         type="button"

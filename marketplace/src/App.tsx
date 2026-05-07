@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
 import { HomePage } from "./pages/HomePage";
@@ -9,8 +9,15 @@ import { FavoritesPage } from "./pages/FavoritesPage";
 import { SearchPage } from "./pages/SearchPage";
 import { NewsListPage } from "./pages/NewsListPage";
 import { NewsArticlePage } from "./pages/NewsArticlePage";
-import { AdminApp } from "./admin/AdminApp";
+import { NotFoundPage } from "./pages/NotFoundPage";
+import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
+import { PromoStrip } from "./components/PromoStrip";
+import { CompareBar } from "./components/CompareBar";
 import { useLocalState } from "./lib/storage";
+
+const AdminApp = lazy(() =>
+  import("./admin/AdminApp").then(m => ({ default: m.AdminApp })),
+);
 
 /** A simple hash-based route shape; keeps SPA & PWA-static-host friendly. */
 export type Route =
@@ -22,7 +29,9 @@ export type Route =
   | { name: "favorites" }
   | { name: "news" }
   | { name: "newsArticle"; slug: string }
-  | { name: "admin"; tab?: string };
+  | { name: "admin"; tab?: string }
+  | { name: "compare" }
+  | { name: "notFound" };
 
 function parseHash(hash: string): Route {
   const h = hash.replace(/^#/, "");
@@ -41,7 +50,8 @@ function parseHash(hash: string): Route {
       : { name: "news" };
   }
   if (parts[0] === "admin") return { name: "admin", tab: parts[1] };
-  return { name: "home" };
+  if (parts[0] === "compare") return { name: "compare" };
+  return { name: "notFound" };
 }
 
 export function buildHref(r: Route): string {
@@ -55,6 +65,8 @@ export function buildHref(r: Route): string {
     case "news": return "#/news";
     case "newsArticle": return `#/news/${encodeURIComponent(r.slug)}`;
     case "admin": return r.tab ? `#/admin/${r.tab}` : "#/admin";
+    case "compare": return "#/compare";
+    case "notFound": return "#/404";
   }
 }
 
@@ -122,11 +134,22 @@ export function App() {
   // Admin owns its own chrome (header/sidebar) — render the storefront chrome
   // only on customer-facing routes.
   if (route.name === "admin") {
-    return <AdminApp tab={route.tab} />;
+    return (
+      <Suspense
+        fallback={
+          <div className="flex min-h-screen items-center justify-center text-ink-2">
+            Загрузка админки…
+          </div>
+        }
+      >
+        <AdminApp tab={route.tab} />
+      </Suspense>
+    );
   }
 
   return (
     <div className="flex min-h-full flex-col">
+      <PromoStrip />
       <Header
         cartCount={cartCount}
         favoriteCount={favorites.length}
@@ -142,10 +165,25 @@ export function App() {
         {route.name === "favorites" && <FavoritesPage ctx={ctx} />}
         {route.name === "news" && <NewsListPage />}
         {route.name === "newsArticle" && <NewsArticlePage slug={route.slug} />}
+        {route.name === "compare" && <ComparePageLazy ctx={ctx} />}
+        {route.name === "notFound" && <NotFoundPage />}
       </main>
 
       <Footer />
+      <CompareBar />
+      <PwaInstallPrompt />
     </div>
+  );
+}
+
+const ComparePage = lazy(() =>
+  import("./pages/ComparePage").then(m => ({ default: m.ComparePage })),
+);
+function ComparePageLazy({ ctx }: { ctx: ShopCtx }) {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-[1320px] p-6 text-ink-2">Загрузка…</div>}>
+      <ComparePage ctx={ctx} />
+    </Suspense>
   );
 }
 

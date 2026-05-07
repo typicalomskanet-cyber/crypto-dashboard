@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useCatalog, useCategories, useProducts, useProductsByCategory } from "../lib/catalog";
+import { useCompare, useRecentlyViewed } from "../lib/preferences";
 import { discountPct, formatPrice } from "../lib/format";
 import { buildHref, type ShopCtx } from "../App";
 import { ProductGrid } from "../components/ProductGrid";
+import { ShareButtons } from "../components/ShareButtons";
 
 const PARTNER_LABEL: Record<string, string> = {
   yandex: "Купить на Яндекс.Маркет",
@@ -16,9 +18,16 @@ export function ProductPage({ id, ctx }: { id: string; ctx: ShopCtx }) {
   const PRODUCTS = useProducts();
   const CATEGORIES = useCategories();
   const { trackClick } = useCatalog();
+  const recent = useRecentlyViewed();
+  const compare = useCompare();
   const p = PRODUCTS.find(x => x.id === id);
   const inCategory = useProductsByCategory(p?.categoryId ?? "");
   const [imgIdx, setImgIdx] = useState(0);
+
+  useEffect(() => {
+    if (p) recent.track(p.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p?.id]);
 
   const related = useMemo(
     () => p
@@ -153,15 +162,30 @@ export function ProductPage({ id, ctx }: { id: string; ctx: ShopCtx }) {
               В корзину
             </button>
 
-            <button
-              type="button"
-              onClick={() => ctx.toggleFavorite(p.id)}
-              className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-line bg-white text-sm text-ink-2 transition hover:border-brand hover:text-brand"
-            >
-              <HeartIcon filled={fav} />
-              {fav ? "В избранном" : "В избранное"}
-            </button>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => ctx.toggleFavorite(p.id)}
+                className="flex h-11 items-center justify-center gap-2 rounded-xl border border-line bg-white text-sm text-ink-2 transition hover:border-brand hover:text-brand"
+              >
+                <HeartIcon filled={fav} />
+                {fav ? "В избранном" : "В избранное"}
+              </button>
+              <button
+                type="button"
+                onClick={() => compare.toggle(p.id)}
+                className={`flex h-11 items-center justify-center gap-2 rounded-xl border text-sm transition ${
+                  compare.has(p.id)
+                    ? "border-brand bg-brand-light text-brand"
+                    : "border-line bg-white text-ink-2 hover:border-brand hover:text-brand"
+                }`}
+              >
+                ⚖️ {compare.has(p.id) ? "В сравнении" : "Сравнить"}
+              </button>
+            </div>
           </div>
+
+          <ShareButtons product={p} />
 
           <div className="rounded-2xl border border-line bg-white p-4 text-[13px] text-ink-2">
             <div className="mb-1 font-semibold text-ink">🚚 Доставка</div>

@@ -4,6 +4,7 @@ import { ProductsTab } from "./ProductsTab";
 import { CategoriesTab } from "./CategoriesTab";
 import { BannersTab } from "./BannersTab";
 import { NewsTab } from "./NewsTab";
+import { PromosTab } from "./PromosTab";
 import { SettingsTab } from "./SettingsTab";
 import { AnalyticsTab } from "./AnalyticsTab";
 import { ImportExportTab } from "./ImportExportTab";
@@ -13,6 +14,7 @@ const TABS = [
   { id: "categories", label: "Категории", icon: "🗂️" },
   { id: "banners", label: "Баннеры", icon: "🖼️" },
   { id: "news", label: "Новости", icon: "📰" },
+  { id: "promos", label: "Промокоды", icon: "🎁" },
   { id: "analytics", label: "Аналитика", icon: "📊" },
   { id: "settings", label: "Настройки", icon: "⚙️" },
   { id: "io", label: "Импорт / Экспорт", icon: "🔁" },
@@ -141,6 +143,7 @@ export function AdminApp({ tab }: { tab?: string }) {
           {activeTab === "categories" && <CategoriesTab />}
           {activeTab === "banners" && <BannersTab />}
           {activeTab === "news" && <NewsTab />}
+          {activeTab === "promos" && <PromosTab />}
           {activeTab === "analytics" && <AnalyticsTab />}
           {activeTab === "settings" && <SettingsTab />}
           {activeTab === "io" && <ImportExportTab />}

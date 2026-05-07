@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCatalog, useCategories, useNews, useProducts } from "../lib/catalog";
+import { useRecentlyViewed } from "../lib/preferences";
 import { ProductGrid } from "../components/ProductGrid";
 import { buildHref, type ShopCtx } from "../App";
 import { discountPct, formatDate } from "../lib/format";
@@ -8,7 +9,12 @@ export function HomePage({ ctx }: { ctx: ShopCtx }) {
   const PRODUCTS = useProducts();
   const CATEGORIES = useCategories();
   const news = useNews().slice(0, 3);
-  const { banners } = useCatalog();
+  const { banners, productById } = useCatalog();
+  const recent = useRecentlyViewed();
+  const recentlyViewed = useMemo(
+    () => recent.ids.map(id => productById.get(id)).filter((p): p is NonNullable<typeof p> => !!p),
+    [recent.ids, productById],
+  );
 
   const bestsellers = useMemo(
     () =>
@@ -73,6 +79,25 @@ export function HomePage({ ctx }: { ctx: ShopCtx }) {
         <Section title="✨ Новинки">
           <ProductGrid products={newArrivals} ctx={ctx} showPartnerButton />
         </Section>
+      )}
+
+      {recentlyViewed.length > 0 && (
+        <section className="mt-10">
+          <div className="mb-3 flex items-baseline justify-between">
+            <div className="flex items-baseline gap-3">
+              <h2 className="text-[18px] font-extrabold md:text-[22px]">👀 Вы недавно смотрели</h2>
+              <span className="text-[13px] text-ink-2">{recentlyViewed.length} {recentlyViewed.length === 1 ? "товар" : "товаров"}</span>
+            </div>
+            <button
+              type="button"
+              onClick={recent.clear}
+              className="text-sm text-ink-2 hover:text-discount"
+            >
+              Очистить
+            </button>
+          </div>
+          <ProductGrid products={recentlyViewed} ctx={ctx} showPartnerButton />
+        </section>
       )}
 
       {news.length > 0 && (
