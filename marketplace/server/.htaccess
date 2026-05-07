@@ -1,0 +1,52 @@
+# Yantach Shop — root .htaccess
+# Static SPA + PHP upload endpoint hardening.
+
+Options -Indexes -ExecCGI
+
+# Security headers
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+  Header set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+  # Conservative CSP — allows inline styles/scripts (Vite hashes them) and
+  # images from any HTTPS host so Unsplash & user uploads still work.
+  Header set Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' http: https:; font-src 'self' data:; frame-ancestors 'self';"
+</IfModule>
+
+# Block access to dotfiles and obvious sensitive paths
+<FilesMatch "^\.|\.bak$|\.log$|composer\.|package\.json$">
+  Require all denied
+</FilesMatch>
+
+# Cache: hashed assets (Vite emits content hashes) get long-lived cache,
+# HTML and the manifest stay fresh.
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType image/jpeg               "access plus 1 year"
+  ExpiresByType image/png                "access plus 1 year"
+  ExpiresByType image/gif                "access plus 1 year"
+  ExpiresByType image/webp               "access plus 1 year"
+  ExpiresByType image/avif               "access plus 1 year"
+  ExpiresByType image/svg+xml            "access plus 1 month"
+  ExpiresByType text/css                 "access plus 1 year"
+  ExpiresByType application/javascript   "access plus 1 year"
+  ExpiresByType application/manifest+json "access plus 0 seconds"
+  ExpiresByType text/html                "access plus 0 seconds"
+</IfModule>
+<IfModule mod_headers.c>
+  <FilesMatch "\.(?:js|css|woff2?|jpg|jpeg|png|gif|webp|avif|svg)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <FilesMatch "\.(?:html|webmanifest|json)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+</IfModule>
+
+# Compression — gzip if available; brotli auto-applies on hosts that ship it.
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/css application/javascript application/json image/svg+xml application/xml
+</IfModule>
+
+# SPA fallback: Vite uses hash routing, so we just need real 404s for assets.
+# No rewrite needed.

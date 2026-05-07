@@ -37,7 +37,65 @@ export interface Product {
   /** External partner URL — clicking "Купить" redirects here. */
   partnerUrl: string;
   /** Partner that the redirect leads to (for label on the button) */
-  partner: "yandex" | "ozon" | "wildberries" | "ali" | "other";
+  partner: PartnerKind;
+  /** Optional extra partner links (multi-marketplace cross-listing). The
+   *  primary `partnerUrl` is shown by default; secondary entries appear in
+   *  a "Купить ещё на …" dropdown on the product card / detail page. */
+  partnerLinks?: PartnerLink[];
   /** Stock indicator text shown on the detail page */
   stock?: string;
+  /** Optional SEO overrides. If unset, defaults from `title` / `description`
+   *  are used to build <meta> tags when this product page is open. */
+  seoTitle?: string;
+  seoDescription?: string;
+  seoImage?: string;
+  /** When false, the product is hidden from the storefront (still visible in
+   *  admin). Defaults to true. */
+  active?: boolean;
+}
+
+export type PartnerKind = "yandex" | "ozon" | "wildberries" | "ali" | "other";
+
+export interface PartnerLink {
+  partner: PartnerKind;
+  url: string;
+  /** Optional label override (e.g. "Маркет — Москва") */
+  label?: string;
+}
+
+export interface Brand {
+  id: string;
+  name: string;
+  /** Short tagline shown on the brand page header */
+  tagline?: string;
+  /** Brand logo URL (square recommended) */
+  logo?: string;
+  /** Long description (markdown-lite) */
+  description?: string;
+}
+
+export interface Collection {
+  id: string;
+  /** Headline rendered on the home page block */
+  title: string;
+  /** Optional subtitle line */
+  subtitle?: string;
+  /** Ordered product ids */
+  productIds: string[];
+  /** When false, hidden from the storefront */
+  active?: boolean;
+  /** Sort order on the home page (smaller = higher) */
+  order?: number;
+}
+
+export interface ThemePreset {
+  id: string;
+  name: string;
+  brand: string;
+  brandDark: string;
+  brandLight: string;
+  accent: string;
+  discount: string;
+  paper: string;
+  ink: string;
 }

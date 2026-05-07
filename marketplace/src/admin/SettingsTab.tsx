@@ -1,11 +1,22 @@
 import { useState } from "react";
 import { useCatalog } from "../lib/catalog";
+import { hashPassword, isLegacyPasswordHash } from "../lib/crypto";
 import { Field, inputCls } from "./AdminApp";
 
 export function SettingsTab() {
   const { settings, updateSettings, resetToSeed } = useCatalog();
-  const [draft, setDraft] = useState(settings);
+  // Password field works with a separate plain text buffer that's hashed on
+  // save — so the form never round-trips the raw hash and admins can type a
+  // new password without seeing the encoded form.
+  const [draft, setDraft] = useState({
+    siteName: settings.siteName,
+    defaultAffiliateUrl: settings.defaultAffiliateUrl,
+    uploadEndpoint: settings.uploadEndpoint,
+    uploadToken: settings.uploadToken,
+  });
+  const [newPassword, setNewPassword] = useState("");
   const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   return (
     <div className="max-w-[640px]">
@@ -33,14 +44,20 @@ export function SettingsTab() {
         </Field>
 
         <Field
-          label="Пароль администратора"
-          hint="нужен для входа в /#/admin"
+          label="Новый пароль администратора"
+          hint={
+            isLegacyPasswordHash(settings.adminPassword)
+              ? "пароль хранится в открытом виде — задайте новый, он будет захеширован (PBKDF2)"
+              : "оставьте пустым чтобы не менять. Хранится как PBKDF2-хеш."
+          }
         >
           <input
-            type="text"
-            value={draft.adminPassword}
-            onChange={e => setDraft({ ...draft, adminPassword: e.target.value })}
+            type="password"
+            autoComplete="new-password"
+            value={newPassword}
+            onChange={e => setNewPassword(e.target.value)}
             className={inputCls}
+            placeholder="••••••••"
           />
         </Field>
 
@@ -76,14 +93,25 @@ export function SettingsTab() {
 
         <div className="flex flex-wrap gap-2 pt-2">
           <button
-            onClick={() => {
-              updateSettings(draft);
-              setSaved(true);
-              setTimeout(() => setSaved(false), 2000);
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                const patch: Partial<typeof settings> = { ...draft };
+                if (newPassword.trim().length > 0) {
+                  patch.adminPassword = await hashPassword(newPassword);
+                }
+                updateSettings(patch);
+                setNewPassword("");
+                setSaved(true);
+                setTimeout(() => setSaved(false), 2000);
+              } finally {
+                setBusy(false);
+              }
             }}
-            className="rounded-lg bg-brand px-5 py-2 text-[13px] font-semibold text-white hover:bg-brand-dark"
+            className="rounded-lg bg-brand px-5 py-2 text-[13px] font-semibold text-white hover:bg-brand-dark disabled:opacity-60"
           >
-            Сохранить
+            {busy ? "Сохраняем…" : "Сохранить"}
           </button>
           {saved && <span className="self-center text-[12px] text-brand">Сохранено ✓</span>}
         </div>
@@ -102,10 +130,10 @@ export function SettingsTab() {
               setDraft({
                 siteName: "Yantach Shop",
                 defaultAffiliateUrl: "https://market.yandex.ru/cc/9NW947",
-                adminPassword: "admin",
                 uploadEndpoint: "http://a1262430.xsph.ru/upload.php",
                 uploadToken: "a764bd68c87dde34f8fccd239ca9d677",
               });
+              setNewPassword("");
             }
           }}
           className="mt-3 rounded-lg bg-discount px-4 py-2 text-[13px] font-semibold text-white hover:bg-discount/90"

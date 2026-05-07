@@ -1,12 +1,39 @@
+import { useState } from "react";
 import { useCatalog } from "../lib/catalog";
 import { formatPrice } from "../lib/format";
 import { buildHref, type ShopCtx } from "../App";
 
+const PARTNER_LABEL: Record<string, string> = {
+  yandex: "Яндекс.Маркет",
+  ozon: "Ozon",
+  wildberries: "Wildberries",
+  ali: "AliExpress",
+  other: "Партнёр",
+};
+
 export function CartPage({ ctx }: { ctx: ShopCtx }) {
-  const { productById } = useCatalog();
+  const { productById, trackClick } = useCatalog();
+  const [popupBlocked, setPopupBlocked] = useState(false);
   const items = ctx.cart
     .map(c => ({ c, p: productById.get(c.productId) }))
     .filter((row): row is { c: typeof row.c; p: NonNullable<typeof row.p> } => !!row.p);
+
+  // Open one tab per unique partner URL in the cart so the user lands on the
+  // correct affiliate page for every distinct product link they're checking out.
+  const checkoutLinks = Array.from(
+    new Map(items.map(({ p }) => [p.partnerUrl, p])).values(),
+  );
+
+  function handleCheckout() {
+    setPopupBlocked(false);
+    let blocked = 0;
+    for (const p of checkoutLinks) {
+      trackClick(p.id);
+      const win = window.open(p.partnerUrl, "_blank", "noopener,noreferrer");
+      if (!win) blocked++;
+    }
+    if (blocked > 0) setPopupBlocked(true);
+  }
 
   const total = items.reduce((sum, { c, p }) => sum + c.qty * p.price, 0);
   const oldTotal = items.reduce(
@@ -107,23 +134,53 @@ export function CartPage({ ctx }: { ctx: ShopCtx }) {
 
           <button
             type="button"
-            onClick={() => alert("Это демо-чекаут.\n\nДля реальной покупки используйте кнопку «Купить на Яндекс.Маркет» внутри карточки товара — она ведёт на сайт партнёра.")}
-            className="mt-4 flex h-12 w-full items-center justify-center rounded-xl bg-brand font-semibold text-white hover:bg-brand-dark"
+            onClick={handleCheckout}
+            className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-accent font-bold text-ink hover:bg-accent-dark"
           >
             Оформить заказ
+            <span className="rounded-md bg-ink/10 px-1.5 py-0.5 text-[11px] font-bold">
+              {checkoutLinks.length} {checkoutLinks.length === 1 ? "ссылка" : "ссыл."}
+            </span>
           </button>
+
+          <p className="mt-2 text-[11px] leading-relaxed text-ink-2">
+            При нажатии откроется {checkoutLinks.length === 1 ? "вкладка" : `${checkoutLinks.length} вкладок`} с сайтами партнёров — там завершите покупку.
+          </p>
+
+          {popupBlocked && (
+            <div className="mt-3 rounded-lg bg-discount/10 p-2 text-[12px] text-discount">
+              Браузер заблокировал часть всплывающих окон. Разрешите всплывающие окна для этого сайта или открывайте партнёров вручную из списка ниже.
+            </div>
+          )}
+
+          {checkoutLinks.length > 1 && (
+            <div className="mt-3 space-y-1.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-2">
+                Ссылки на партнёров
+              </div>
+              {checkoutLinks.map(p => (
+                <a
+                  key={p.partnerUrl}
+                  href={p.partnerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer sponsored"
+                  onClick={() => trackClick(p.id)}
+                  className="flex items-center gap-2 rounded-lg border border-line bg-paper px-2 py-1.5 text-[12px] hover:border-brand hover:bg-brand-light"
+                >
+                  <img src={p.images[0]} alt="" className="h-7 w-7 shrink-0 rounded object-cover" />
+                  <span className="clamp-1 flex-1">{p.title}</span>
+                  <span className="shrink-0 text-[10px] text-ink-2">{PARTNER_LABEL[p.partner]} ↗</span>
+                </a>
+              ))}
+            </div>
+          )}
 
           <button
             onClick={ctx.clearCart}
-            className="mt-2 flex h-10 w-full items-center justify-center text-sm text-ink-2 hover:text-discount"
+            className="mt-3 flex h-10 w-full items-center justify-center text-sm text-ink-2 hover:text-discount"
           >
             Очистить корзину
           </button>
-
-          <p className="mt-3 text-[11px] leading-relaxed text-ink-2">
-            Демо-оформление. Для реальной покупки нажмите «Купить на
-            Яндекс.Маркет» в карточке товара — переход к партнёру.
-          </p>
         </aside>
       </div>
     </div>

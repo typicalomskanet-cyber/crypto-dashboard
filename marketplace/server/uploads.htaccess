@@ -1,0 +1,21 @@
+# /uploads/.htaccess — block any code execution, only static files served.
+# Rename to .htaccess on deploy (FTP often hides dotfiles in folder views).
+
+Options -Indexes -ExecCGI -Includes
+RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .pl .py .jsp .asp .htm .shtml .sh .cgi
+RemoveType    .php .phtml .php3 .php4 .php5 .php7 .pl .py .jsp .asp .htm .shtml .sh .cgi
+AddType text/plain .php .phtml .php3 .php4 .php5 .php7 .pl .py .jsp .asp .cgi
+
+<FilesMatch "\.(php|phtml|phar|pl|py|jsp|asp|sh|cgi|htaccess)$">
+  Require all denied
+</FilesMatch>
+
+<IfModule mod_php.c>
+  php_flag engine off
+</IfModule>
+
+# Long-lived cache for user-uploaded images.
+<IfModule mod_headers.c>
+  Header set Cache-Control "public, max-age=2592000"
+  Header set X-Content-Type-Options "nosniff"
+</IfModule>

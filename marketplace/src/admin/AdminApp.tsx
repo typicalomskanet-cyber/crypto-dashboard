@@ -1,5 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useCatalog } from "../lib/catalog";
+import { hashPassword, verifyPassword, isLegacyPasswordHash } from "../lib/crypto";
 import { ProductsTab } from "./ProductsTab";
 import { CategoriesTab } from "./CategoriesTab";
 import { BannersTab } from "./BannersTab";
@@ -20,19 +21,37 @@ const TABS = [
   { id: "io", label: "Импорт / Экспорт", icon: "🔁" },
 ] as const;
 
-const SESSION_KEY = "yantach.admin.session.v1";
+const SESSION_KEY = "yantach.admin.session.v2";
+const IDLE_LIMIT_MS = 60 * 60 * 1000; // 60 minutes
 
-export function AdminApp({ tab }: { tab?: string }) {
-  const { settings, products, news } = useCatalog();
-  const [unlocked, setUnlocked] = useState<boolean>(() => {
-    try {
-      return sessionStorage.getItem(SESSION_KEY) === "1";
-    } catch {
+function readSession(): boolean {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return false;
+    const { ts } = JSON.parse(raw) as { ts: number };
+    if (Date.now() - ts > IDLE_LIMIT_MS) {
+      sessionStorage.removeItem(SESSION_KEY);
       return false;
     }
-  });
+    return true;
+  } catch {
+    return false;
+  }
+}
+function writeSession() {
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ts: Date.now() })); } catch { /* noop */ }
+}
+function clearSession() {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch { /* noop */ }
+}
+
+export function AdminApp({ tab }: { tab?: string }) {
+  const { settings, products, news, updateSettings } = useCatalog();
+  const [unlocked, setUnlocked] = useState<boolean>(() => readSession());
   const [pwd, setPwd] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const idleTimer = useRef<number | null>(null);
 
   const activeTab = tab && TABS.some(t => t.id === tab) ? tab : "products";
 
@@ -40,20 +59,55 @@ export function AdminApp({ tab }: { tab?: string }) {
     document.title = `Админка — ${settings.siteName}`;
   }, [settings.siteName]);
 
+  // Auto-logout after IDLE_LIMIT_MS of no user activity.
+  useEffect(() => {
+    if (!unlocked) return;
+    function bump() {
+      writeSession();
+      if (idleTimer.current) window.clearTimeout(idleTimer.current);
+      idleTimer.current = window.setTimeout(() => {
+        clearSession();
+        setUnlocked(false);
+      }, IDLE_LIMIT_MS);
+    }
+    bump();
+    const events = ["mousemove", "keydown", "click", "touchstart", "scroll"] as const;
+    events.forEach(e => window.addEventListener(e, bump, { passive: true }));
+    return () => {
+      events.forEach(e => window.removeEventListener(e, bump));
+      if (idleTimer.current) window.clearTimeout(idleTimer.current);
+    };
+  }, [unlocked]);
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const ok = await verifyPassword(pwd, settings.adminPassword);
+      if (!ok) {
+        setError("Неверный пароль");
+        return;
+      }
+      // Migrate legacy plaintext password to PBKDF2 on first successful login.
+      if (isLegacyPasswordHash(settings.adminPassword)) {
+        const upgraded = await hashPassword(pwd);
+        updateSettings({ adminPassword: upgraded });
+      }
+      writeSession();
+      setUnlocked(true);
+      setError(null);
+    } catch {
+      setError("Ошибка входа");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!unlocked) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-paper p-4">
         <form
-          onSubmit={e => {
-            e.preventDefault();
-            if (pwd === settings.adminPassword) {
-              try { sessionStorage.setItem(SESSION_KEY, "1"); } catch { /* ignore */ }
-              setUnlocked(true);
-              setError(null);
-            } else {
-              setError("Неверный пароль");
-            }
-          }}
+          onSubmit={handleLogin}
           className="w-full max-w-[360px] space-y-3 rounded-2xl border border-line bg-white p-6 shadow-lg"
         >
           <div className="text-center">
@@ -72,9 +126,10 @@ export function AdminApp({ tab }: { tab?: string }) {
           {error && <div className="text-[12px] text-discount">{error}</div>}
           <button
             type="submit"
-            className="flex h-11 w-full items-center justify-center rounded-xl bg-brand font-semibold text-white hover:bg-brand-dark"
+            disabled={busy}
+            className="flex h-11 w-full items-center justify-center rounded-xl bg-brand font-semibold text-white hover:bg-brand-dark disabled:opacity-60"
           >
-            Войти
+            {busy ? "Проверяем…" : "Войти"}
           </button>
           <a
             href="#/"
@@ -106,7 +161,7 @@ export function AdminApp({ tab }: { tab?: string }) {
           </div>
           <button
             onClick={() => {
-              try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+              clearSession();
               setUnlocked(false);
               setPwd("");
             }}
